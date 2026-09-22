@@ -232,10 +232,10 @@ export const AdminPage: React.FC<AdminPageProps> = ({
   const totalSeries = catalog.filter((i) => i.type === 'series').length;
   const totalTVShows = catalog.filter((i) => i.type === 'tv-show').length;
   const totalEpisodes = catalog.reduce(
-    (acc, item) => acc + (item.seasons ? item.seasons.reduce((sAcc, s) => sAcc + s.episodes.length, 0) : 0),
+    (acc, item) => acc + (Array.isArray(item.seasons) ? item.seasons.reduce((sAcc, s) => sAcc + (Array.isArray(s.episodes) ? s.episodes.length : 0), 0) : 0),
     0
   );
-  const totalViews = catalog.reduce((acc, item) => acc + item.views, 0);
+  const totalViews = catalog.reduce((acc, item) => acc + (Number(item.views) || 0), 0);
 
   // Reset form helper
   const resetForm = () => {
