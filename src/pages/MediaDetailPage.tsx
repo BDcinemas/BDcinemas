@@ -114,7 +114,11 @@ export const MediaDetailPage: React.FC<MediaDetailPageProps> = ({
               <img
                 src={item.poster}
                 alt={item.title}
+                loading="lazy"
                 className="w-full h-full object-cover"
+                onError={(e) => {
+                  (e.currentTarget as HTMLImageElement).src = 'https://images.unsplash.com/photo-1485846234645-a62644f84728?w=600&auto=format&fit=crop&q=80';
+                }}
               />
             </div>
 

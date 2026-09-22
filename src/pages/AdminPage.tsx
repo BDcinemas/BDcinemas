@@ -2,7 +2,7 @@ import React, { useState } from 'react';
 import { MediaItem } from '../types';
 import {
   Shield, Film, Tv, Video, Eye, Plus, Trash2, EyeOff,
-  Search, Loader2, CheckCircle2, AlertCircle, Sparkles, ExternalLink
+  Search, Loader2, CheckCircle2, AlertCircle, Sparkles, Image as ImageIcon
 } from 'lucide-react';
 import { metadataService, validateImdbId, cleanImdbId, FetchedImdbMetadata } from '../services/imdbService';
 
@@ -21,14 +21,19 @@ export const AdminPage: React.FC<AdminPageProps> = ({
 }) => {
   const [showAddForm, setShowAddForm] = useState(false);
 
-  // Form Fields per ADMIN WORKFLOW:
-  // Required: Poster URL, Title, Content Type, IMDb ID, Watch Link
-  // Optional: Year, Genre, Description, Backdrop
-  const [poster, setPoster] = useState('');
-  const [title, setTitle] = useState('');
+  // Form Fields per NEW ADMIN WORKFLOW:
+  // 1. Content Type (default 'movie')
+  // 2. IMDb ID
+  // 3. Watch Link
+  // 4. Custom Poster URL (Optional override)
+  // 5. Optional manual edits: Title, Year, Genre, Description, Backdrop
   const [type, setType] = useState<'movie' | 'series' | 'tv-show'>('movie');
   const [imdbId, setImdbId] = useState('');
   const [watchLink, setWatchLink] = useState('');
+  const [customPoster, setCustomPoster] = useState('');
+
+  // Automatically populated fields (can be reviewed / adjusted before publishing)
+  const [title, setTitle] = useState('');
   const [year, setYear] = useState('');
   const [genre, setGenre] = useState('Drama');
   const [description, setDescription] = useState('');
@@ -36,15 +41,19 @@ export const AdminPage: React.FC<AdminPageProps> = ({
   const [featured, setFeatured] = useState(false);
   const [trending, setTrending] = useState(false);
 
-  // IMDb metadata state (automatically populated, NEVER manually entered)
+  // Retrieved IMDb metadata
   const [retrievedRating, setRetrievedRating] = useState<number | undefined>(undefined);
   const [retrievedVotes, setRetrievedVotes] = useState<string | undefined>(undefined);
+  const [retrievedPoster, setRetrievedPoster] = useState<string | undefined>(undefined);
   const [retrievedMetadata, setRetrievedMetadata] = useState<FetchedImdbMetadata | null>(null);
 
   // Fetch status indicators
   const [isFetchingImdb, setIsFetchingImdb] = useState(false);
   const [fetchError, setFetchError] = useState<string | null>(null);
   const [fetchSuccessMessage, setFetchSuccessMessage] = useState<string | null>(null);
+
+  // Resolved poster for preview & final save: customPoster overrides automatically retrieved poster
+  const resolvedPoster = customPoster.trim() || retrievedPoster || '';
 
   const totalMovies = catalog.filter((i) => i.type === 'movie').length;
   const totalSeries = catalog.filter((i) => i.type === 'series').length;
@@ -57,11 +66,11 @@ export const AdminPage: React.FC<AdminPageProps> = ({
 
   // Reset form helper
   const resetForm = () => {
-    setPoster('');
-    setTitle('');
     setType('movie');
     setImdbId('');
     setWatchLink('');
+    setCustomPoster('');
+    setTitle('');
     setYear('');
     setGenre('Drama');
     setDescription('');
@@ -70,6 +79,7 @@ export const AdminPage: React.FC<AdminPageProps> = ({
     setTrending(false);
     setRetrievedRating(undefined);
     setRetrievedVotes(undefined);
+    setRetrievedPoster(undefined);
     setRetrievedMetadata(null);
     setFetchError(null);
     setFetchSuccessMessage(null);
@@ -77,12 +87,10 @@ export const AdminPage: React.FC<AdminPageProps> = ({
 
   /**
    * Action: Fetch IMDb Data
-   * 1. Validate the IMDb ID format.
-   * 2. Retrieve metadata through authorized API.
-   * 3. Populate available metadata automatically.
-   * 4. Show the retrieved IMDb rating.
-   * 5. Allow Admin to review the data before publishing.
-   * 6. Prioritize Admin-provided poster and manual title as overrides.
+   * 1. Validates IMDb ID.
+   * 2. Automatically retrieves metadata + best available poster.
+   * 3. Populates poster, rating, votes, title, year, runtime, genres, description, cast.
+   * 4. Displays rich poster preview with metadata for Admin review.
    */
   const handleFetchImdb = async () => {
     setFetchError(null);
@@ -108,7 +116,14 @@ export const AdminPage: React.FC<AdminPageProps> = ({
         const data = res.data;
         setRetrievedMetadata(data);
 
-        // Store rating and vote count
+        // 1. Automatically retrieve & populate best available poster
+        if (data.poster) {
+          setRetrievedPoster(data.poster);
+        } else {
+          setRetrievedPoster(undefined);
+        }
+
+        // 2. Automatically retrieve ratings and votes
         if (data.imdbRating !== undefined) {
           setRetrievedRating(data.imdbRating);
         }
@@ -116,47 +131,42 @@ export const AdminPage: React.FC<AdminPageProps> = ({
           setRetrievedVotes(data.imdbVotes);
         }
 
-        // Automatic metadata filling with override preservation:
-        // "If the Admin has already provided a poster URL, prioritize the Admin-provided poster."
-        if (!poster && data.poster) {
-          setPoster(data.poster);
-        }
-
-        // "If the Admin has entered a title manually, do not unexpectedly replace it unless empty"
-        if (!title && data.title) {
+        // 3. Automatically populate title, year, genres, description, backdrop
+        if (data.title) {
           setTitle(data.title);
         }
-
-        // Fill optional fields if not manually filled
-        if (!year && data.year) {
+        if (data.year) {
           setYear(data.year.toString());
-        }
-        if (!backdrop && (data.backdrop || data.poster)) {
-          setBackdrop(data.backdrop || data.poster || '');
-        }
-        if (!description && data.description) {
-          setDescription(data.description);
         }
         if (data.genres && data.genres.length > 0) {
           setGenre(data.genres[0]);
         }
+        if (data.description) {
+          setDescription(data.description);
+        }
+        if (data.backdrop) {
+          setBackdrop(data.backdrop);
+        }
 
-        const ratingText = data.imdbRating ? `IMDb Rating: ${data.imdbRating}` : 'IMDb metadata linked (rating pending)';
-        setFetchSuccessMessage(`Successfully retrieved metadata for "${data.title || cleanedId}" via ${res.providerName}. ${ratingText}`);
+        const ratingText = data.imdbRating ? `IMDb: ${data.imdbRating}` : 'Metadata linked';
+        const posterText = data.poster ? 'Poster imported' : 'Poster unavailable';
+        setFetchSuccessMessage(`Successfully retrieved "${data.title || cleanedId}" (${ratingText}, ${posterText}) via ${res.providerName}.`);
       } else {
-        // "If the IMDb API/data provider is unavailable:
-        // Do not invent a rating. Do not show a fake rating.
+        // Provider unavailable:
+        // Do not invent fake ratings or fake posters.
         // Clearly indicate that IMDb metadata could not be retrieved.
-        // Still allow the Admin to publish the content with the other manually supplied information"
+        // Still allow Admin to publish with manual information.
         setRetrievedRating(undefined);
         setRetrievedVotes(undefined);
+        setRetrievedPoster(undefined);
         setRetrievedMetadata(null);
-        setFetchError(res.error || 'IMDb metadata could not be retrieved. You may still publish with your manual information.');
+        setFetchError(res.error || 'IMDb metadata could not be retrieved. You may enter information manually.');
       }
     } catch (err: any) {
       setRetrievedRating(undefined);
       setRetrievedVotes(undefined);
-      setFetchError('Connection error contacting movie metadata provider. You may still publish with manual fields.');
+      setRetrievedPoster(undefined);
+      setFetchError('Connection error contacting movie metadata provider. You may enter details manually.');
     } finally {
       setIsFetchingImdb(false);
     }
@@ -164,16 +174,24 @@ export const AdminPage: React.FC<AdminPageProps> = ({
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
+
     if (!title.trim()) {
-      setFetchError('Title is required to publish.');
+      setFetchError('Title is required to publish. Please fetch IMDb data or enter a title.');
+      return;
+    }
+
+    if (!watchLink.trim()) {
+      setFetchError('Watch Link is required to publish.');
       return;
     }
 
     const cleanedId = imdbId.trim() ? cleanImdbId(imdbId) : undefined;
     const finalYear = parseInt(year) || (retrievedMetadata?.year) || new Date().getFullYear();
-    const finalPoster = poster.trim() || retrievedMetadata?.poster || 'https://images.unsplash.com/photo-1485846234645-a62644f84728?w=600&auto=format&fit=crop&q=80';
+
+    // Final resolved poster: customPoster > retrievedPoster > fallback
+    const finalPoster = resolvedPoster || 'https://images.unsplash.com/photo-1485846234645-a62644f84728?w=600&auto=format&fit=crop&q=80';
     const finalBackdrop = backdrop.trim() || retrievedMetadata?.backdrop || finalPoster;
-    const finalWatchLink = watchLink.trim() || 'https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/TearsOfSteel.mp4';
+    const finalWatchLink = watchLink.trim();
 
     const newItem: MediaItem = {
       id: `title-${Date.now()}`,
@@ -186,7 +204,6 @@ export const AdminPage: React.FC<AdminPageProps> = ({
       year: finalYear,
       releaseDate: retrievedMetadata?.releaseDate || `${finalYear}`,
       runtime: retrievedMetadata?.runtime || (type === 'movie' ? '2h 05m' : '1 Season'),
-      // Store real IMDb rating or undefined if unavailable - DO NOT invent fake rating!
       rating: retrievedRating || 0,
       imdbId: cleanedId,
       imdbRating: retrievedRating,
@@ -222,7 +239,7 @@ export const AdminPage: React.FC<AdminPageProps> = ({
               <h1 className="text-2xl sm:text-3xl font-black text-white">Admin Console</h1>
             </div>
             <p className="text-xs sm:text-sm text-white/50 mt-1">
-              Automated IMDb metadata integration, live catalog ingestion, and telemetry.
+              Automated IMDb metadata & poster ingestion, live catalog administration, and telemetry.
             </p>
           </div>
 
@@ -231,7 +248,7 @@ export const AdminPage: React.FC<AdminPageProps> = ({
               setShowAddForm(!showAddForm);
               if (!showAddForm) resetForm();
             }}
-            className="self-start sm:self-auto px-4 py-2.5 rounded-xl bg-[#E50914] hover:bg-[#ff334b] text-white text-xs font-bold flex items-center gap-2 transition shadow-lg"
+            className="self-start sm:self-auto px-4 py-2.5 rounded-xl bg-[#E50914] hover:bg-[#ff334b] text-white text-xs font-bold flex items-center gap-2 transition shadow-lg cursor-pointer"
           >
             <Plus className="w-4 h-4" />
             <span>{showAddForm ? 'Close Form' : 'Add New Title'}</span>
@@ -281,7 +298,7 @@ export const AdminPage: React.FC<AdminPageProps> = ({
           </div>
         </div>
 
-        {/* Add Title Form with IMDb Auto-Retrieval */}
+        {/* Add Title Form with Automatic Poster & IMDb Ingestion */}
         {showAddForm && (
           <form
             onSubmit={handleSubmit}
@@ -291,48 +308,67 @@ export const AdminPage: React.FC<AdminPageProps> = ({
               <div className="flex items-center justify-between">
                 <h3 className="text-lg font-bold text-white flex items-center gap-2">
                   <Sparkles className="w-5 h-5 text-[#E50914]" />
-                  <span>Ingest Content via IMDb Metadata</span>
+                  <span>Ingest Content via IMDb Metadata & Poster</span>
                 </h3>
-                <span className="text-xs text-white/40">Step-by-step Admin Workflow</span>
+                <span className="text-xs text-white/40">Automated Admin Workflow</span>
               </div>
               <p className="text-xs text-white/50 mt-1">
-                Enter the IMDb ID and click <strong className="text-white">Fetch IMDb Data</strong> to retrieve ratings, genres, and metadata automatically without manual rating entry.
+                Select Content Type, enter the IMDb ID, and click <strong className="text-white">Fetch IMDb Data</strong>. The best available poster, rating, and metadata will be automatically retrieved. Then enter your Watch Link and publish.
               </p>
             </div>
 
-            {/* IMDb ID Ingestion Toolbar */}
-            <div className="bg-black/40 border border-white/10 p-4 rounded-xl space-y-3">
-              <label className="block text-xs font-semibold text-white/90">
-                IMDb ID <span className="text-[#E50914]">*</span> (Format: tt1234567)
-              </label>
-              <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-3">
-                <div className="relative flex-1">
-                  <input
-                    type="text"
-                    value={imdbId}
-                    onChange={(e) => setImdbId(e.target.value)}
-                    placeholder="e.g. tt1375666 (Inception), tt15004776 (Hawa)"
-                    className="w-full bg-[#18181D] border border-white/20 rounded-xl px-4 py-2.5 text-sm text-white placeholder-white/30 focus:outline-none focus:ring-2 focus:ring-[#E50914]"
-                  />
+            {/* Step 1 & 2: Content Type & IMDb Ingestion Field */}
+            <div className="bg-black/40 border border-white/10 p-4 sm:p-5 rounded-xl space-y-4">
+              <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+                {/* 1. Content Type */}
+                <div>
+                  <label className="block text-xs font-semibold text-white/90 mb-1.5">
+                    1. Content Type <span className="text-[#E50914]">*</span>
+                  </label>
+                  <select
+                    value={type}
+                    onChange={(e) => setType(e.target.value as any)}
+                    className="w-full bg-[#18181D] border border-white/20 rounded-xl px-3 py-2.5 text-sm text-white focus:outline-none focus:ring-2 focus:ring-[#E50914]"
+                  >
+                    <option value="movie">Movie</option>
+                    <option value="series">Web Series</option>
+                    <option value="tv-show">TV Show</option>
+                  </select>
                 </div>
-                <button
-                  type="button"
-                  onClick={handleFetchImdb}
-                  disabled={isFetchingImdb}
-                  className="px-5 py-2.5 rounded-xl bg-[#E50914] hover:bg-[#ff334b] text-white text-xs font-bold flex items-center justify-center gap-2 transition disabled:opacity-50 shadow-md cursor-pointer"
-                >
-                  {isFetchingImdb ? (
-                    <>
-                      <Loader2 className="w-4 h-4 animate-spin" />
-                      <span>Fetching IMDb Data...</span>
-                    </>
-                  ) : (
-                    <>
-                      <Search className="w-4 h-4" />
-                      <span>Fetch IMDb Data</span>
-                    </>
-                  )}
-                </button>
+
+                {/* 2. IMDb ID */}
+                <div className="sm:col-span-2">
+                  <label className="block text-xs font-semibold text-white/90 mb-1.5">
+                    2. IMDb ID <span className="text-[#E50914]">*</span> (Format: tt1234567)
+                  </label>
+                  <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-2.5">
+                    <input
+                      type="text"
+                      value={imdbId}
+                      onChange={(e) => setImdbId(e.target.value)}
+                      placeholder="e.g. tt1375666 (Inception)"
+                      className="flex-1 bg-[#18181D] border border-white/20 rounded-xl px-4 py-2.5 text-sm text-white placeholder-white/30 focus:outline-none focus:ring-2 focus:ring-[#E50914]"
+                    />
+                    <button
+                      type="button"
+                      onClick={handleFetchImdb}
+                      disabled={isFetchingImdb}
+                      className="px-5 py-2.5 rounded-xl bg-[#E50914] hover:bg-[#ff334b] text-white text-xs font-bold flex items-center justify-center gap-2 transition disabled:opacity-50 shadow-md cursor-pointer flex-shrink-0"
+                    >
+                      {isFetchingImdb ? (
+                        <>
+                          <Loader2 className="w-4 h-4 animate-spin" />
+                          <span>Fetching IMDb Data...</span>
+                        </>
+                      ) : (
+                        <>
+                          <Search className="w-4 h-4" />
+                          <span>Fetch IMDb Data</span>
+                        </>
+                      )}
+                    </button>
+                  </div>
+                </div>
               </div>
 
               {/* Status & Results Banner */}
@@ -360,37 +396,142 @@ export const AdminPage: React.FC<AdminPageProps> = ({
                   </div>
                 </div>
               )}
-
-              {/* Auto Retrieved Badge indicator */}
-              {retrievedRating !== undefined && (
-                <div className="flex items-center gap-2 pt-1 text-xs">
-                  <span className="text-white/60">Active Ingested Rating:</span>
-                  <span className="bg-[#FFD700]/20 border border-[#FFD700]/40 text-[#FFD700] px-2.5 py-0.5 rounded-full font-bold">
-                    IMDb {retrievedRating.toFixed(1)}
-                  </span>
-                  <span className="text-emerald-400 text-[11px]">✓ No manual entry required</span>
-                </div>
-              )}
             </div>
 
-            {/* Core Content Form Fields */}
+            {/* Poster Preview & Information Review Section */}
+            {(resolvedPoster || title || isFetchingImdb) && (
+              <div className="bg-black/30 border border-white/10 rounded-xl p-4 sm:p-5">
+                <div className="flex items-center justify-between mb-3 border-b border-white/10 pb-2">
+                  <span className="text-xs font-bold text-white tracking-wider uppercase flex items-center gap-1.5">
+                    <ImageIcon className="w-4 h-4 text-[#E50914]" />
+                    <span>Poster Preview & Imported Details</span>
+                  </span>
+                  {customPoster ? (
+                    <span className="text-[11px] font-semibold text-amber-400 bg-amber-500/10 border border-amber-500/30 px-2 py-0.5 rounded">
+                      Custom Poster Override Active
+                    </span>
+                  ) : retrievedPoster ? (
+                    <span className="text-[11px] font-semibold text-emerald-400 bg-emerald-500/10 border border-emerald-500/30 px-2 py-0.5 rounded">
+                      Automatically Retrieved Poster
+                    </span>
+                  ) : null}
+                </div>
+
+                <div className="flex flex-col sm:flex-row gap-5 items-start">
+                  {/* Poster Preview Container (2:3 Aspect Ratio) */}
+                  <div className="w-36 sm:w-44 flex-shrink-0">
+                    <div className="aspect-[2/3] w-full rounded-xl overflow-hidden bg-black/80 border border-white/10 relative shadow-2xl flex items-center justify-center">
+                      {isFetchingImdb ? (
+                        <div className="flex flex-col items-center justify-center gap-2 text-white/50 text-xs">
+                          <Loader2 className="w-6 h-6 animate-spin text-[#E50914]" />
+                          <span>Retrieving poster...</span>
+                        </div>
+                      ) : resolvedPoster ? (
+                        <img
+                          src={resolvedPoster}
+                          alt={title || 'Poster preview'}
+                          loading="lazy"
+                          className="w-full h-full object-cover transition-transform duration-300"
+                          onError={(e) => {
+                            // Graceful fallback for broken image URLs
+                            (e.currentTarget as HTMLImageElement).src = 'https://images.unsplash.com/photo-1485846234645-a62644f84728?w=600&auto=format&fit=crop&q=80';
+                          }}
+                        />
+                      ) : (
+                        <div className="flex flex-col items-center justify-center p-3 text-center text-white/40 text-xs gap-1.5">
+                          <ImageIcon className="w-8 h-8 stroke-1 text-white/20" />
+                          <span className="font-medium text-white/60">Poster unavailable</span>
+                          <span className="text-[10px] text-white/30">Enter a custom poster URL below if needed</span>
+                        </div>
+                      )}
+                    </div>
+                  </div>
+
+                  {/* Metadata Summary Review */}
+                  <div className="flex-1 space-y-2.5 text-xs">
+                    <div>
+                      <span className="text-white/40 text-[10px] uppercase font-bold tracking-wider">Title</span>
+                      <h4 className="text-base sm:text-lg font-bold text-white">
+                        {title || <span className="text-white/30 italic">No title yet</span>}
+                      </h4>
+                    </div>
+
+                    <div className="flex flex-wrap items-center gap-3">
+                      {retrievedRating !== undefined && (
+                        <div className="bg-[#FFD700]/20 border border-[#FFD700]/40 text-[#FFD700] px-2.5 py-1 rounded-md font-bold flex items-center gap-1">
+                          <span>IMDb:</span>
+                          <span className="text-white font-black">{retrievedRating.toFixed(1)}</span>
+                          {retrievedVotes && <span className="text-white/50 text-[10px]">({retrievedVotes})</span>}
+                        </div>
+                      )}
+
+                      {year && (
+                        <div className="bg-white/5 border border-white/10 px-2.5 py-1 rounded-md text-white/80">
+                          Year: <strong className="text-white">{year}</strong>
+                        </div>
+                      )}
+
+                      {genre && (
+                        <div className="bg-white/5 border border-white/10 px-2.5 py-1 rounded-md text-white/80">
+                          Genre: <strong className="text-white">{genre}</strong>
+                        </div>
+                      )}
+                    </div>
+
+                    {description && (
+                      <p className="text-white/70 line-clamp-3 leading-relaxed text-xs pt-1">
+                        {description}
+                      </p>
+                    )}
+
+                    {retrievedMetadata?.cast && (
+                      <p className="text-white/40 text-[11px] pt-1">
+                        <strong className="text-white/60">Cast:</strong> {retrievedMetadata.cast.join(', ')}
+                      </p>
+                    )}
+                  </div>
+                </div>
+              </div>
+            )}
+
+            {/* Step 3: Watch Link & Custom Poster Override */}
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 text-xs">
-              <div>
-                <label className="block text-white/70 mb-1 font-medium">
-                  Poster URL <span className="text-[#E50914]">*</span>
+              {/* Watch Link (Required) */}
+              <div className="sm:col-span-2">
+                <label className="block text-white/90 mb-1 font-semibold">
+                  3. Watch Link <span className="text-[#E50914]">*</span>
                 </label>
                 <input
                   type="url"
-                  value={poster}
-                  onChange={(e) => setPoster(e.target.value)}
-                  placeholder="https://... image poster URL"
-                  className="w-full bg-white/5 border border-white/10 rounded-xl px-3 py-2.5 text-white placeholder-white/30 focus:outline-none focus:ring-1 focus:ring-[#E50914]"
+                  required
+                  value={watchLink}
+                  onChange={(e) => setWatchLink(e.target.value)}
+                  placeholder="https://... direct video stream or MP4 link"
+                  className="w-full bg-[#18181D] border border-white/20 rounded-xl px-4 py-2.5 text-sm text-white placeholder-white/30 focus:outline-none focus:ring-2 focus:ring-[#E50914]"
                 />
-                <span className="text-[10px] text-white/40 mt-1 block">
-                  Admin-provided poster URL overrides retrieved poster.
+                <span className="text-[11px] text-white/40 mt-1 block">
+                  The playable media stream URL for the public player modal.
                 </span>
               </div>
 
+              {/* Custom Poster Override (Optional) */}
+              <div className="sm:col-span-2">
+                <label className="block text-white/70 mb-1 font-medium">
+                  Custom Poster URL (Optional)
+                </label>
+                <input
+                  type="url"
+                  value={customPoster}
+                  onChange={(e) => setCustomPoster(e.target.value)}
+                  placeholder="https://... enter to override automatically retrieved poster"
+                  className="w-full bg-white/5 border border-white/10 rounded-xl px-3 py-2.5 text-white placeholder-white/30 focus:outline-none focus:ring-1 focus:ring-[#E50914]"
+                />
+                <span className="text-[10px] text-white/40 mt-1 block">
+                  Defaults to the automatically retrieved IMDb poster. If entered, this custom poster will be used instead.
+                </span>
+              </div>
+
+              {/* Reviewed / Editable Title */}
               <div>
                 <label className="block text-white/70 mb-1 font-medium">
                   Title <span className="text-[#E50914]">*</span>
@@ -400,56 +541,26 @@ export const AdminPage: React.FC<AdminPageProps> = ({
                   required
                   value={title}
                   onChange={(e) => setTitle(e.target.value)}
-                  placeholder="e.g. Inception, Hawa"
-                  className="w-full bg-white/5 border border-white/10 rounded-xl px-3 py-2.5 text-white placeholder-white/30 focus:outline-none focus:ring-1 focus:ring-[#E50914]"
-                />
-                <span className="text-[10px] text-white/40 mt-1 block">
-                  Admin manual title overrides retrieved title.
-                </span>
-              </div>
-
-              <div>
-                <label className="block text-white/70 mb-1 font-medium">
-                  Content Type <span className="text-[#E50914]">*</span>
-                </label>
-                <select
-                  value={type}
-                  onChange={(e) => setType(e.target.value as any)}
-                  className="w-full bg-[#18181D] border border-white/10 rounded-xl px-3 py-2.5 text-white focus:outline-none focus:ring-1 focus:ring-[#E50914]"
-                >
-                  <option value="movie">Movie</option>
-                  <option value="series">Web Series</option>
-                  <option value="tv-show">TV Show</option>
-                </select>
-              </div>
-
-              <div>
-                <label className="block text-white/70 mb-1 font-medium">
-                  Watch Link <span className="text-[#E50914]">*</span>
-                </label>
-                <input
-                  type="url"
-                  value={watchLink}
-                  onChange={(e) => setWatchLink(e.target.value)}
-                  placeholder="https://... video stream/MP4 link"
+                  placeholder="e.g. Inception"
                   className="w-full bg-white/5 border border-white/10 rounded-xl px-3 py-2.5 text-white placeholder-white/30 focus:outline-none focus:ring-1 focus:ring-[#E50914]"
                 />
               </div>
 
-              {/* Optional Fields */}
+              {/* Release Year */}
               <div>
-                <label className="block text-white/70 mb-1 font-medium">Release Year (Optional)</label>
+                <label className="block text-white/70 mb-1 font-medium">Release Year</label>
                 <input
                   type="number"
                   value={year}
                   onChange={(e) => setYear(e.target.value)}
-                  placeholder="e.g. 2024"
+                  placeholder="e.g. 2010"
                   className="w-full bg-white/5 border border-white/10 rounded-xl px-3 py-2.5 text-white focus:outline-none focus:ring-1 focus:ring-[#E50914]"
                 />
               </div>
 
+              {/* Genre */}
               <div>
-                <label className="block text-white/70 mb-1 font-medium">Primary Genre (Optional)</label>
+                <label className="block text-white/70 mb-1 font-medium">Genre</label>
                 <select
                   value={genre}
                   onChange={(e) => setGenre(e.target.value)}
@@ -468,17 +579,19 @@ export const AdminPage: React.FC<AdminPageProps> = ({
                 </select>
               </div>
 
-              <div className="sm:col-span-2">
+              {/* Backdrop */}
+              <div>
                 <label className="block text-white/70 mb-1 font-medium">Backdrop Image URL (Optional)</label>
                 <input
                   type="url"
                   value={backdrop}
                   onChange={(e) => setBackdrop(e.target.value)}
-                  placeholder="https://... wide backdrop image URL"
+                  placeholder="https://... wide backdrop URL"
                   className="w-full bg-white/5 border border-white/10 rounded-xl px-3 py-2.5 text-white placeholder-white/30 focus:outline-none focus:ring-1 focus:ring-[#E50914]"
                 />
               </div>
 
+              {/* Description */}
               <div className="sm:col-span-2">
                 <label className="block text-white/70 mb-1 font-medium">Description (Optional)</label>
                 <textarea
@@ -550,11 +663,17 @@ export const AdminPage: React.FC<AdminPageProps> = ({
                 className="px-6 py-3.5 flex items-center justify-between gap-4 hover:bg-white/[0.02] transition"
               >
                 <div className="flex items-center gap-3 min-w-0">
-                  <img
-                    src={item.poster}
-                    alt={item.title}
-                    className="w-10 h-14 rounded-lg object-cover bg-black flex-shrink-0"
-                  />
+                  <div className="w-10 h-14 rounded-lg overflow-hidden bg-black flex-shrink-0 border border-white/10">
+                    <img
+                      src={item.poster}
+                      alt={item.title}
+                      loading="lazy"
+                      className="w-full h-full object-cover"
+                      onError={(e) => {
+                        (e.currentTarget as HTMLImageElement).src = 'https://images.unsplash.com/photo-1485846234645-a62644f84728?w=600&auto=format&fit=crop&q=80';
+                      }}
+                    />
+                  </div>
                   <div className="min-w-0">
                     <div className="flex items-center gap-2">
                       <p className="text-sm font-semibold text-white truncate">{item.title}</p>

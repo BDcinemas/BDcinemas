@@ -61,8 +61,8 @@ export interface IMetadataProvider {
 /**
  * Authorized Movie Metadata Provider
  * Queries authorized movie metadata services using standard JSON APIs.
- * Supports configurable API Key via VITE_OMDB_API_KEY or TMDB if set in environment.
- * Fallbacks cleanly to open authorized metadata registry or returns explicit status when unavailable.
+ * Supports configurable API endpoint or server-side proxy route (/api/metadata?imdbId=...)
+ * with clean fallback to authorized providers.
  */
 class AuthorizedMetadataProvider implements IMetadataProvider {
   name = 'Authorized Movie Metadata Service';
@@ -77,9 +77,28 @@ class AuthorizedMetadataProvider implements IMetadataProvider {
       };
     }
 
-    // 1. Try OMDb API if key is present or try public gateway
-    const apiKey = (import.meta as any).env?.VITE_OMDB_API_KEY || (import.meta as any).env?.VITE_METADATA_API_KEY;
+    // 1. Check for backend proxy endpoint if configured (keeps all secrets server-side)
+    const backendProxyUrl = (import.meta as any).env?.VITE_METADATA_PROXY_URL;
+    if (backendProxyUrl) {
+      try {
+        const response = await fetch(`${backendProxyUrl}?imdbId=${encodeURIComponent(imdbId)}`);
+        if (response.ok) {
+          const json = await response.json();
+          if (json.success && json.data) {
+            return {
+              success: true,
+              data: json.data,
+              providerName: 'Backend Metadata Gateway'
+            };
+          }
+        }
+      } catch (err) {
+        console.warn('Backend metadata proxy error:', err);
+      }
+    }
 
+    // 2. Try configured OMDb API if key is supplied in environment
+    const apiKey = (import.meta as any).env?.VITE_OMDB_API_KEY;
     if (apiKey) {
       try {
         const response = await fetch(`https://www.omdbapi.com/?i=${encodeURIComponent(imdbId)}&apikey=${encodeURIComponent(apiKey)}`);
@@ -104,7 +123,7 @@ class AuthorizedMetadataProvider implements IMetadataProvider {
       }
     }
 
-    // 2. Try TMDB Find API if TMDB token is present
+    // 3. Try TMDB Find API if configured
     const tmdbKey = (import.meta as any).env?.VITE_TMDB_API_KEY;
     if (tmdbKey) {
       try {
@@ -140,9 +159,8 @@ class AuthorizedMetadataProvider implements IMetadataProvider {
       }
     }
 
-    // 3. Fallback to open authorized endpoint (e.g. Free public endpoints or offline verified registry)
+    // 4. Fallback to open authorized endpoint (e.g. Free public endpoints or offline verified registry)
     try {
-      // Test public educational OMDb endpoint with free demo key or open catalog
       const publicResponse = await fetch(`https://www.omdbapi.com/?i=${encodeURIComponent(imdbId)}&apikey=trilogy`);
       if (publicResponse.ok) {
         const json = await publicResponse.json();
@@ -159,10 +177,10 @@ class AuthorizedMetadataProvider implements IMetadataProvider {
     }
 
     // If metadata provider is unavailable or rate limited:
-    // Do NOT invent fake ratings. Return clear error status per requirements.
+    // Do NOT invent fake ratings or fake posters. Return clear error status per requirements.
     return {
       success: false,
-      error: 'Metadata provider is currently unreachable or requires an API key in the environment (e.g. VITE_OMDB_API_KEY).',
+      error: 'Metadata provider is currently unreachable or requires a provider key in the environment (e.g. VITE_OMDB_API_KEY).',
       providerName: this.name
     };
   }
