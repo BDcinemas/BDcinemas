@@ -1,7 +1,8 @@
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import { useRouter } from './lib/router';
 import { INITIAL_MEDIA_ITEMS } from './data/mockData';
 import { MediaItem } from './types';
+import { googleAppsScriptService } from './services/googleAppsScriptService';
 import { useWatchlist } from './hooks/useWatchlist';
 import { Navbar } from './components/Navbar';
 import { Footer } from './components/Footer';
@@ -20,6 +21,28 @@ import { NotFoundPage } from './pages/NotFoundPage';
 export const App: React.FC = () => {
   const { currentPath, params } = useRouter();
   const [catalog, setCatalog] = useState<MediaItem[]>(INITIAL_MEDIA_ITEMS);
+
+  useEffect(() => {
+    let cancelled = false;
+
+    const loadPublishedContent = async () => {
+      try {
+        const response = await googleAppsScriptService.getPublished();
+
+        if (!cancelled && response.success && Array.isArray(response.data)) {
+          setCatalog(response.data);
+        }
+      } catch (error) {
+        console.error("Failed to load published content from Google Sheets:", error);
+      }
+    };
+
+    loadPublishedContent();
+
+    return () => {
+      cancelled = true;
+    };
+  }, []);
   const {
     watchlist,
     toggleWatchlist,
@@ -274,6 +297,7 @@ export const App: React.FC = () => {
           onAddMedia={handleAddMedia}
           onDeleteMedia={handleDeleteMedia}
           onTogglePublish={handleTogglePublish}
+          onSetCatalog={setCatalog}
         />
       );
     }

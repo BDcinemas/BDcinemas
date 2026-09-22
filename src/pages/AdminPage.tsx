@@ -1,25 +1,198 @@
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import { MediaItem } from '../types';
 import {
-  Shield, Film, Tv, Video, Eye, Plus, Trash2, EyeOff,
+  Shield, Film, Tv, Video, Eye, Plus, Trash2, EyeOff, LogOut,
   Search, Loader2, CheckCircle2, AlertCircle, Sparkles, Image as ImageIcon
 } from 'lucide-react';
 import { metadataService, validateImdbId, cleanImdbId, FetchedImdbMetadata } from '../services/imdbService';
+import { googleAppsScriptService } from '../services/googleAppsScriptService';
 
 interface AdminPageProps {
   catalog: MediaItem[];
   onAddMedia: (item: MediaItem) => void;
   onDeleteMedia: (id: string) => void;
   onTogglePublish: (id: string) => void;
+  onSetCatalog: (items: MediaItem[]) => void;
 }
 
 export const AdminPage: React.FC<AdminPageProps> = ({
   catalog,
   onAddMedia,
   onDeleteMedia,
-  onTogglePublish
+  onTogglePublish,
+  onSetCatalog
 }) => {
   const [showAddForm, setShowAddForm] = useState(false);
+  const [sessionId, setSessionId] = useState<string | null>(null);
+  const [adminEmail, setAdminEmail] = useState('');
+  const [adminRole, setAdminRole] = useState('');
+  const [isCheckingSession, setIsCheckingSession] = useState(true);
+  const [isLoggingIn, setIsLoggingIn] = useState(false);
+  const [loginEmail, setLoginEmail] = useState('');
+  const [loginPassword, setLoginPassword] = useState('');
+  const [loginError, setLoginError] = useState<string | null>(null);
+  const [actionError, setActionError] = useState<string | null>(null);
+  const [isSyncingCatalog, setIsSyncingCatalog] = useState(false);
+
+  useEffect(() => {
+    let cancelled = false;
+
+    const restoreSession = async () => {
+      const storedSessionId = sessionStorage.getItem('bdcinemas_admin_session');
+
+      if (!storedSessionId) {
+        if (!cancelled) setIsCheckingSession(false);
+        return;
+      }
+
+      try {
+        const response = await googleAppsScriptService.checkSession(storedSessionId);
+
+        if (cancelled) return;
+
+        if (response.success) {
+          setSessionId(storedSessionId);
+          setAdminEmail(sessionStorage.getItem('bdcinemas_admin_email') || '');
+          setAdminRole(sessionStorage.getItem('bdcinemas_admin_role') || 'admin');
+
+          try {
+            const contentResponse =
+              await googleAppsScriptService.getContent(storedSessionId);
+
+            if (
+              !cancelled &&
+              contentResponse.success &&
+              Array.isArray(contentResponse.data)
+            ) {
+              onSetCatalog(contentResponse.data);
+            }
+          } catch (error) {
+            console.error('Failed to load admin catalog:', error);
+          }
+        } else {
+          sessionStorage.removeItem('bdcinemas_admin_session');
+          sessionStorage.removeItem('bdcinemas_admin_email');
+          sessionStorage.removeItem('bdcinemas_admin_role');
+        }
+      } catch (error) {
+        console.error('Failed to restore admin session:', error);
+        sessionStorage.removeItem('bdcinemas_admin_session');
+        sessionStorage.removeItem('bdcinemas_admin_email');
+        sessionStorage.removeItem('bdcinemas_admin_role');
+      } finally {
+        if (!cancelled) setIsCheckingSession(false);
+      }
+    };
+
+    restoreSession();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [onSetCatalog]);
+
+  const refreshAdminCatalog = async (activeSessionId: string) => {
+    setIsSyncingCatalog(true);
+    setActionError(null);
+
+    try {
+      const response =
+        await googleAppsScriptService.getContent(activeSessionId);
+
+      if (!response.success || !Array.isArray(response.data)) {
+        throw new Error(
+          response.error || 'Failed to load catalog from Google Sheets.'
+        );
+      }
+
+      onSetCatalog(response.data);
+    } catch (error: any) {
+      setActionError(
+        error?.message ||
+          'Failed to synchronize catalog with Google Sheets.'
+      );
+      throw error;
+    } finally {
+      setIsSyncingCatalog(false);
+    }
+  };
+
+  const handleLogin = async (e: React.FormEvent) => {
+    e.preventDefault();
+
+    setLoginError(null);
+
+    const email = loginEmail.trim().toLowerCase();
+    const password = loginPassword;
+
+    if (!email || !password) {
+      setLoginError('Email and password are required.');
+      return;
+    }
+
+    setIsLoggingIn(true);
+
+    try {
+      const response =
+        await googleAppsScriptService.login(email, password);
+
+      if (!response.success || !response.sessionId) {
+        setLoginError(response.error || 'Invalid email or password.');
+        return;
+      }
+
+      sessionStorage.setItem(
+        'bdcinemas_admin_session',
+        response.sessionId
+      );
+      sessionStorage.setItem(
+        'bdcinemas_admin_email',
+        response.admin?.email || email
+      );
+      sessionStorage.setItem(
+        'bdcinemas_admin_role',
+        response.admin?.role || 'admin'
+      );
+
+      setSessionId(response.sessionId);
+      setAdminEmail(response.admin?.email || email);
+      setAdminRole(response.admin?.role || 'admin');
+      setLoginPassword('');
+
+      await refreshAdminCatalog(response.sessionId);
+    } catch (error) {
+      setLoginError(
+        error instanceof Error
+          ? error.message
+          : 'Unable to connect to the admin service.'
+      );
+    } finally {
+      setIsLoggingIn(false);
+    }
+  };
+
+  const handleLogout = async () => {
+    const activeSessionId = sessionId;
+
+    try {
+      if (activeSessionId) {
+        await googleAppsScriptService.logout(activeSessionId);
+      }
+    } catch (error) {
+      console.error('Logout request failed:', error);
+    } finally {
+      sessionStorage.removeItem('bdcinemas_admin_session');
+      sessionStorage.removeItem('bdcinemas_admin_email');
+      sessionStorage.removeItem('bdcinemas_admin_role');
+
+      setSessionId(null);
+      setAdminEmail('');
+      setAdminRole('');
+      setShowAddForm(false);
+      setActionError(null);
+    }
+  };
+
 
   // Form Fields per NEW ADMIN WORKFLOW:
   // 1. Content Type (default 'movie')
@@ -172,8 +345,84 @@ export const AdminPage: React.FC<AdminPageProps> = ({
     }
   };
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleTogglePublishBackend = async (item: MediaItem) => {
+    if (!sessionId) {
+      setActionError('Your admin session has expired. Please log in again.');
+      return;
+    }
+
+    setActionError(null);
+
+    try {
+      const response = await googleAppsScriptService.publishContent(
+        sessionId,
+        item.id,
+        !item.published
+      );
+
+      if (!response.success) {
+        throw new Error(
+          response.error ||
+          response.message ||
+          'Publish status could not be updated.'
+        );
+      }
+
+      await refreshAdminCatalog(sessionId);
+    } catch (error: any) {
+      console.error('Failed to update publish status:', error);
+      setActionError(
+        error?.message ||
+        'Failed to update publish status.'
+      );
+    }
+  };
+
+  const handleDeleteBackend = async (item: MediaItem) => {
+    if (!sessionId) {
+      setActionError('Your admin session has expired. Please log in again.');
+      return;
+    }
+
+    const confirmed = window.confirm(
+      `Delete "${item.title}"? This action cannot be undone.`
+    );
+
+    if (!confirmed) return;
+
+    setActionError(null);
+
+    try {
+      const response = await googleAppsScriptService.deleteContent(
+        sessionId,
+        item.id
+      );
+
+      if (!response.success) {
+        throw new Error(
+          response.error ||
+          response.message ||
+          'Content could not be deleted.'
+        );
+      }
+
+      await refreshAdminCatalog(sessionId);
+    } catch (error: any) {
+      console.error('Failed to delete content:', error);
+      setActionError(
+        error?.message ||
+        'Failed to delete content.'
+      );
+    }
+  };
+
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
+
+    if (!sessionId) {
+      setFetchError('Your admin session has expired. Please log in again.');
+      return;
+    }
 
     if (!title.trim()) {
       setFetchError('Title is required to publish. Please fetch IMDb data or enter a title.');
@@ -223,10 +472,149 @@ export const AdminPage: React.FC<AdminPageProps> = ({
       videoUrl: finalWatchLink
     };
 
-    onAddMedia(newItem);
-    resetForm();
-    setShowAddForm(false);
+    try {
+      setFetchError(null);
+
+      const response = await googleAppsScriptService.createContent(
+        sessionId,
+        {
+          title: newItem.title,
+          type: newItem.type,
+          imdbId: newItem.imdbId || '',
+          imdbRating: newItem.imdbRating ?? '',
+          imdbVotes: newItem.imdbVotes ?? '',
+          poster: newItem.poster,
+          backdrop: newItem.backdrop,
+          year: newItem.year,
+          runtime: newItem.runtime,
+          genres: newItem.genres.join(', '),
+          description: newItem.description,
+          cast: newItem.cast.join(', '),
+          director: newItem.director,
+          writer: newItem.writer,
+          watchUrl: newItem.videoUrl || '',
+          featured: newItem.featured,
+          trending: newItem.trending,
+          latest: true,
+          published: true
+        }
+      );
+
+      if (!response.success) {
+        throw new Error(
+          response.error ||
+          response.message ||
+          'Content could not be saved to Google Sheets.'
+        );
+      }
+
+      await refreshAdminCatalog(sessionId);
+
+      resetForm();
+      setShowAddForm(false);
+    } catch (error: any) {
+      console.error('Failed to create content:', error);
+
+      setFetchError(
+        error?.message ||
+        'Failed to save content to Google Sheets.'
+      );
+    }
   };
+
+  if (isCheckingSession) {
+    return (
+      <div className="min-h-screen bg-[#0A0A0C] flex items-center justify-center px-4">
+        <div className="w-full max-w-md rounded-2xl bg-[#18181D] border border-white/10 p-8 text-center shadow-2xl">
+          <Loader2 className="w-8 h-8 animate-spin text-[#E50914] mx-auto mb-4" />
+          <h1 className="text-lg font-bold text-white">
+            Checking Admin Session
+          </h1>
+          <p className="text-xs text-white/40 mt-2">
+            Please wait while your secure session is verified.
+          </p>
+        </div>
+      </div>
+    );
+  }
+
+  if (!sessionId) {
+    return (
+      <div className="min-h-screen bg-[#0A0A0C] flex items-center justify-center px-4 py-16">
+        <form
+          onSubmit={handleLogin}
+          className="w-full max-w-md rounded-2xl bg-[#18181D] border border-white/10 p-6 sm:p-8 shadow-2xl"
+        >
+          <div className="flex items-center gap-3 mb-6">
+            <div className="w-11 h-11 rounded-xl bg-[#E50914]/10 border border-[#E50914]/30 flex items-center justify-center">
+              <Shield className="w-5 h-5 text-[#E50914]" />
+            </div>
+            <div>
+              <h1 className="text-xl font-black text-white">Admin Login</h1>
+              <p className="text-xs text-white/40 mt-0.5">
+                bdcinemas Admin Console
+              </p>
+            </div>
+          </div>
+
+          {loginError && (
+            <div className="mb-4 p-3 bg-red-500/10 border border-red-500/30 rounded-xl flex items-start gap-2.5 text-xs text-red-300">
+              <AlertCircle className="w-4 h-4 flex-shrink-0 mt-0.5 text-red-400" />
+              <span>{loginError}</span>
+            </div>
+          )}
+
+          <div className="space-y-4">
+            <div>
+              <label className="block text-xs font-semibold text-white/80 mb-1.5">
+                Email
+              </label>
+              <input
+                type="email"
+                autoComplete="username"
+                value={loginEmail}
+                onChange={(e) => setLoginEmail(e.target.value)}
+                placeholder="admin@example.com"
+                className="w-full bg-black/30 border border-white/10 rounded-xl px-4 py-3 text-sm text-white placeholder-white/30 focus:outline-none focus:ring-2 focus:ring-[#E50914]"
+              />
+            </div>
+
+            <div>
+              <label className="block text-xs font-semibold text-white/80 mb-1.5">
+                Password
+              </label>
+              <input
+                type="password"
+                autoComplete="current-password"
+                value={loginPassword}
+                onChange={(e) => setLoginPassword(e.target.value)}
+                placeholder="Enter your password"
+                className="w-full bg-black/30 border border-white/10 rounded-xl px-4 py-3 text-sm text-white placeholder-white/30 focus:outline-none focus:ring-2 focus:ring-[#E50914]"
+              />
+            </div>
+
+            <button
+              type="submit"
+              disabled={isLoggingIn}
+              className="w-full px-4 py-3 rounded-xl bg-[#E50914] hover:bg-[#ff334b] text-white text-sm font-bold flex items-center justify-center gap-2 transition disabled:opacity-50 shadow-lg"
+            >
+              {isLoggingIn ? (
+                <>
+                  <Loader2 className="w-4 h-4 animate-spin" />
+                  Signing in...
+                </>
+              ) : (
+                <>
+                  <Shield className="w-4 h-4" />
+                  Sign In
+                </>
+              )}
+            </button>
+          </div>
+        </form>
+      </div>
+    );
+  }
 
   return (
     <div className="min-h-screen bg-[#0A0A0C] pt-24 sm:pt-28 pb-16">
@@ -692,7 +1080,7 @@ export const AdminPage: React.FC<AdminPageProps> = ({
 
                 <div className="flex items-center gap-2">
                   <button
-                    onClick={() => onTogglePublish(item.id)}
+                    onClick={() => handleTogglePublishBackend(item)}
                     className={`p-2 rounded-lg border transition cursor-pointer ${
                       item.published
                         ? 'bg-[#E50914]/10 border-[#E50914]/30 text-[#E50914] hover:bg-[#E50914]/20'
@@ -704,7 +1092,7 @@ export const AdminPage: React.FC<AdminPageProps> = ({
                   </button>
 
                   <button
-                    onClick={() => onDeleteMedia(item.id)}
+                    onClick={() => handleDeleteBackend(item)}
                     className="p-2 rounded-lg bg-white/5 hover:bg-red-500/20 border border-white/10 hover:border-red-500/30 text-white/50 hover:text-red-400 transition cursor-pointer"
                     title="Delete Title"
                   >
