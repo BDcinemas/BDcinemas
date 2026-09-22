@@ -90,6 +90,7 @@ async function post<T>(
 ): Promise<ApiResponse<T>> {
   const response = await fetch(getApiUrl(), {
     method: 'POST',
+    redirect: 'follow',
     headers: {
       'Content-Type': 'text/plain;charset=utf-8'
     },
