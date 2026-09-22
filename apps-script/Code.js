@@ -1063,53 +1063,60 @@ function deleteContent(
 // ================================
 
 function rowToContent(row) {
+  const title = String(row[1] || "").trim();
+  const typeValue = String(row[2] || "movie").trim().toLowerCase();
+  const type = typeValue === "series" || typeValue === "tv-show" || typeValue === "movie" ? typeValue : "movie";
+
+  const genres = String(row[10] || "").split(",").map(function(item) { return item.trim(); }).filter(function(item) { return item.length > 0; });
+  const cast = String(row[12] || "").split(",").map(function(item) { return item.trim(); }).filter(function(item) { return item.length > 0; });
+
+  const yearNumber = Number(row[8]);
+  const imdbRatingNumber = Number(row[4]);
+  const imdbRating = Number.isFinite(imdbRatingNumber) ? imdbRatingNumber : 0;
+
+  const slug = title.toLowerCase().trim().replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "");
+
+  const published = row[19] === true || String(row[19] || "").toLowerCase() === "true";
+  const featured = row[16] === true || String(row[16] || "").toLowerCase() === "true";
+  const trending = row[17] === true || String(row[17] || "").toLowerCase() === "true";
+  const latest = row[18] === true || String(row[18] || "").toLowerCase() === "true";
+
+  const createdAt = row[20] ? new Date(row[20]).toISOString() : new Date().toISOString();
 
   return {
-
-    id: row[0],
-
-    title: row[1],
-
-    type: row[2],
-
-    imdbId: row[3],
-
-    imdbRating: row[4],
-
-    imdbVotes: row[5],
-
-    poster: row[6],
-
-    backdrop: row[7],
-
-    year: row[8],
-
-    runtime: row[9],
-
-    genres: row[10],
-
-    description: row[11],
-
-    cast: row[12],
-
-    director: row[13],
-
-    writer: row[14],
-
-    watchUrl: row[15],
-
-    featured: row[16],
-
-    trending: row[17],
-
-    latest: row[18],
-
-    published: row[19],
-
-    createdAt: row[20]
-
+    id: String(row[0] || ""),
+    title: title,
+    slug: slug,
+    originalTitle: title,
+    description: String(row[11] || ""),
+    poster: String(row[6] || ""),
+    backdrop: String(row[7] || ""),
+    year: Number.isFinite(yearNumber) ? yearNumber : 0,
+    releaseDate: createdAt,
+    runtime: String(row[9] || ""),
+    rating: imdbRating,
+    imdbId: String(row[3] || ""),
+    imdbRating: imdbRating,
+    imdbVotes: String(row[5] || ""),
+    genres: genres,
+    language: "Bangla",
+    country: "Bangladesh",
+    quality: "1080p FHD",
+    type: type,
+    cast: cast,
+    director: String(row[13] || ""),
+    writer: String(row[14] || ""),
+    views: 0,
+    featured: featured,
+    trending: trending,
+    comingSoon: false,
+    seasons: [],
+    videoUrl: String(row[15] || ""),
+    trailerUrl: "",
+    published: published,
+    createdAt: createdAt,
+    latest: latest
   };
-
 }
 
 
