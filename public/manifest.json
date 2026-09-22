@@ -1,0 +1,17 @@
+{
+  "name": "bdcinemas",
+  "short_name": "bdcinemas",
+  "start_url": "./",
+  "display": "standalone",
+  "background_color": "#0A0A0C",
+  "theme_color": "#0A0A0C",
+  "description": "Apple-inspired premium cinematic entertainment platform",
+  "icons": [
+    {
+      "src": "./favicon.svg",
+      "sizes": "192x192 512x512",
+      "type": "image/svg+xml",
+      "purpose": "any maskable"
+    }
+  ]
+}

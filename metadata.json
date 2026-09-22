@@ -1,0 +1,6 @@
+{
+  "name": "bdcinemas",
+  "description": "Apple-inspired premium cinematic entertainment platform for movies, TV shows, and web series.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
