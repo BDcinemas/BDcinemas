@@ -74,10 +74,15 @@ export const HeroBanner: React.FC<HeroBannerProps> = ({
             <span className="bg-white/10 backdrop-blur-md text-white/90 px-2 py-0.5 rounded border border-white/10">
               {currentItem.quality}
             </span>
-            <div className="flex items-center gap-1 bg-white/10 backdrop-blur-md px-2 py-0.5 rounded border border-white/10 text-white">
-              <Star className="w-3 h-3 text-[#FFD700] fill-[#FFD700]" />
-              <span className="font-semibold">{currentItem.rating}</span>
-            </div>
+            {((currentItem.imdbRating && currentItem.imdbRating > 0) || (currentItem.rating && currentItem.rating > 0)) && (
+              <div className="flex items-center gap-1.5 bg-black/60 backdrop-blur-md px-2.5 py-0.5 rounded border border-[#FFD700]/30 text-white shadow-md">
+                <span className="text-[10px] font-black text-[#FFD700] tracking-wider">IMDb</span>
+                <span className="font-bold text-xs">{currentItem.imdbRating || currentItem.rating}</span>
+                {currentItem.imdbVotes && (
+                  <span className="text-[10px] text-white/50 hidden sm:inline">({currentItem.imdbVotes})</span>
+                )}
+              </div>
+            )}
             <span className="text-white/60">{currentItem.year}</span>
             <span className="text-white/60">•</span>
             <span className="text-white/60">{currentItem.runtime}</span>

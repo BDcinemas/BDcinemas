@@ -52,10 +52,14 @@ export const MovieCard: React.FC<MovieCardProps> = ({
         </div>
 
         {/* Rating Pill */}
-        <div className="absolute top-2 right-2 flex items-center gap-1 bg-black/70 backdrop-blur-md px-2 py-0.5 rounded-full border border-white/10 z-10">
-          <Star className="w-3 h-3 text-[#FFD700] fill-[#FFD700]" />
-          <span className="text-[11px] font-bold text-white">{item.rating.toFixed(1)}</span>
-        </div>
+        {((item.imdbRating && item.imdbRating > 0) || (item.rating && item.rating > 0)) && (
+          <div className="absolute top-2 right-2 flex items-center gap-1 bg-black/75 backdrop-blur-md px-2 py-0.5 rounded-full border border-white/10 z-10">
+            <span className="text-[10px] font-black tracking-wider text-[#FFD700]">IMDb</span>
+            <span className="text-[11px] font-bold text-white">
+              {(item.imdbRating || item.rating).toFixed(1)}
+            </span>
+          </div>
+        )}
 
         {/* Subtle Dark Vignette on Bottom */}
         <div className="absolute inset-0 bg-gradient-to-t from-black/90 via-black/20 to-transparent opacity-60 group-hover:opacity-90 transition-opacity" />

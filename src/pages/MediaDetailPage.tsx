@@ -81,11 +81,19 @@ export const MediaDetailPage: React.FC<MediaDetailPageProps> = ({
             </h1>
 
             <div className="flex flex-wrap items-center gap-4 text-xs sm:text-sm text-white/70">
-              <div className="flex items-center gap-1 text-[#FFD700]">
-                <Star className="w-4 h-4 fill-[#FFD700]" />
-                <span className="font-bold text-white">{item.rating}</span>
-                <span className="text-white/40">/ 10</span>
-              </div>
+              {((item.imdbRating && item.imdbRating > 0) || (item.rating && item.rating > 0)) && (
+                <div className="flex items-center gap-1.5 text-[#FFD700] bg-black/50 px-2.5 py-1 rounded-md border border-[#FFD700]/30">
+                  <span className="font-black text-xs tracking-wider">IMDb</span>
+                  <span className="font-bold text-white text-sm">{item.imdbRating || item.rating}</span>
+                  <span className="text-white/40 text-xs">/ 10</span>
+                  {item.imdbVotes && (
+                    <span className="text-white/40 text-xs ml-1">({item.imdbVotes} votes)</span>
+                  )}
+                </div>
+              )}
+              {item.imdbId && (
+                <span className="text-white/40 font-mono text-xs">{item.imdbId}</span>
+              )}
               <span>•</span>
               <span>{item.year}</span>
               <span>•</span>

@@ -1,6 +1,10 @@
 import React, { useState } from 'react';
 import { MediaItem } from '../types';
-import { Shield, Film, Tv, Video, Eye, Plus, Trash2, EyeOff, CheckCircle2, TrendingUp, Settings } from 'lucide-react';
+import {
+  Shield, Film, Tv, Video, Eye, Plus, Trash2, EyeOff,
+  Search, Loader2, CheckCircle2, AlertCircle, Sparkles, ExternalLink
+} from 'lucide-react';
+import { metadataService, validateImdbId, cleanImdbId, FetchedImdbMetadata } from '../services/imdbService';
 
 interface AdminPageProps {
   catalog: MediaItem[];
@@ -16,13 +20,31 @@ export const AdminPage: React.FC<AdminPageProps> = ({
   onTogglePublish
 }) => {
   const [showAddForm, setShowAddForm] = useState(false);
+
+  // Form Fields per ADMIN WORKFLOW:
+  // Required: Poster URL, Title, Content Type, IMDb ID, Watch Link
+  // Optional: Year, Genre, Description, Backdrop
+  const [poster, setPoster] = useState('');
   const [title, setTitle] = useState('');
-  const [originalTitle, setOriginalTitle] = useState('');
-  const [director, setDirector] = useState('');
-  const [year, setYear] = useState('2024');
   const [type, setType] = useState<'movie' | 'series' | 'tv-show'>('movie');
+  const [imdbId, setImdbId] = useState('');
+  const [watchLink, setWatchLink] = useState('');
+  const [year, setYear] = useState('');
   const [genre, setGenre] = useState('Drama');
-  const [language, setLanguage] = useState('Bengali');
+  const [description, setDescription] = useState('');
+  const [backdrop, setBackdrop] = useState('');
+  const [featured, setFeatured] = useState(false);
+  const [trending, setTrending] = useState(false);
+
+  // IMDb metadata state (automatically populated, NEVER manually entered)
+  const [retrievedRating, setRetrievedRating] = useState<number | undefined>(undefined);
+  const [retrievedVotes, setRetrievedVotes] = useState<string | undefined>(undefined);
+  const [retrievedMetadata, setRetrievedMetadata] = useState<FetchedImdbMetadata | null>(null);
+
+  // Fetch status indicators
+  const [isFetchingImdb, setIsFetchingImdb] = useState(false);
+  const [fetchError, setFetchError] = useState<string | null>(null);
+  const [fetchSuccessMessage, setFetchSuccessMessage] = useState<string | null>(null);
 
   const totalMovies = catalog.filter((i) => i.type === 'movie').length;
   const totalSeries = catalog.filter((i) => i.type === 'series').length;
@@ -33,39 +55,159 @@ export const AdminPage: React.FC<AdminPageProps> = ({
   );
   const totalViews = catalog.reduce((acc, item) => acc + item.views, 0);
 
+  // Reset form helper
+  const resetForm = () => {
+    setPoster('');
+    setTitle('');
+    setType('movie');
+    setImdbId('');
+    setWatchLink('');
+    setYear('');
+    setGenre('Drama');
+    setDescription('');
+    setBackdrop('');
+    setFeatured(false);
+    setTrending(false);
+    setRetrievedRating(undefined);
+    setRetrievedVotes(undefined);
+    setRetrievedMetadata(null);
+    setFetchError(null);
+    setFetchSuccessMessage(null);
+  };
+
+  /**
+   * Action: Fetch IMDb Data
+   * 1. Validate the IMDb ID format.
+   * 2. Retrieve metadata through authorized API.
+   * 3. Populate available metadata automatically.
+   * 4. Show the retrieved IMDb rating.
+   * 5. Allow Admin to review the data before publishing.
+   * 6. Prioritize Admin-provided poster and manual title as overrides.
+   */
+  const handleFetchImdb = async () => {
+    setFetchError(null);
+    setFetchSuccessMessage(null);
+
+    const cleanedId = cleanImdbId(imdbId);
+    if (!cleanedId) {
+      setFetchError('Please enter an IMDb ID (e.g. tt1375666).');
+      return;
+    }
+
+    if (!validateImdbId(cleanedId)) {
+      setFetchError('Invalid IMDb ID format. Must begin with "tt" followed by 7-9 digits (e.g. tt1375666).');
+      return;
+    }
+
+    setIsFetchingImdb(true);
+
+    try {
+      const res = await metadataService.fetchByImdbId(cleanedId);
+
+      if (res.success && res.data) {
+        const data = res.data;
+        setRetrievedMetadata(data);
+
+        // Store rating and vote count
+        if (data.imdbRating !== undefined) {
+          setRetrievedRating(data.imdbRating);
+        }
+        if (data.imdbVotes) {
+          setRetrievedVotes(data.imdbVotes);
+        }
+
+        // Automatic metadata filling with override preservation:
+        // "If the Admin has already provided a poster URL, prioritize the Admin-provided poster."
+        if (!poster && data.poster) {
+          setPoster(data.poster);
+        }
+
+        // "If the Admin has entered a title manually, do not unexpectedly replace it unless empty"
+        if (!title && data.title) {
+          setTitle(data.title);
+        }
+
+        // Fill optional fields if not manually filled
+        if (!year && data.year) {
+          setYear(data.year.toString());
+        }
+        if (!backdrop && (data.backdrop || data.poster)) {
+          setBackdrop(data.backdrop || data.poster || '');
+        }
+        if (!description && data.description) {
+          setDescription(data.description);
+        }
+        if (data.genres && data.genres.length > 0) {
+          setGenre(data.genres[0]);
+        }
+
+        const ratingText = data.imdbRating ? `IMDb Rating: ${data.imdbRating}` : 'IMDb metadata linked (rating pending)';
+        setFetchSuccessMessage(`Successfully retrieved metadata for "${data.title || cleanedId}" via ${res.providerName}. ${ratingText}`);
+      } else {
+        // "If the IMDb API/data provider is unavailable:
+        // Do not invent a rating. Do not show a fake rating.
+        // Clearly indicate that IMDb metadata could not be retrieved.
+        // Still allow the Admin to publish the content with the other manually supplied information"
+        setRetrievedRating(undefined);
+        setRetrievedVotes(undefined);
+        setRetrievedMetadata(null);
+        setFetchError(res.error || 'IMDb metadata could not be retrieved. You may still publish with your manual information.');
+      }
+    } catch (err: any) {
+      setRetrievedRating(undefined);
+      setRetrievedVotes(undefined);
+      setFetchError('Connection error contacting movie metadata provider. You may still publish with manual fields.');
+    } finally {
+      setIsFetchingImdb(false);
+    }
+  };
+
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
-    if (!title.trim()) return;
+    if (!title.trim()) {
+      setFetchError('Title is required to publish.');
+      return;
+    }
+
+    const cleanedId = imdbId.trim() ? cleanImdbId(imdbId) : undefined;
+    const finalYear = parseInt(year) || (retrievedMetadata?.year) || new Date().getFullYear();
+    const finalPoster = poster.trim() || retrievedMetadata?.poster || 'https://images.unsplash.com/photo-1485846234645-a62644f84728?w=600&auto=format&fit=crop&q=80';
+    const finalBackdrop = backdrop.trim() || retrievedMetadata?.backdrop || finalPoster;
+    const finalWatchLink = watchLink.trim() || 'https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/TearsOfSteel.mp4';
 
     const newItem: MediaItem = {
-      id: `custom-${Date.now()}`,
+      id: `title-${Date.now()}`,
       title: title.trim(),
       slug: title.trim().toLowerCase().replace(/[^a-z0-9]+/g, '-'),
-      originalTitle: originalTitle.trim() || title.trim(),
-      description: 'Custom curated cinematic release added via bdcinemas admin console.',
-      poster: 'https://images.unsplash.com/photo-1485846234645-a62644f84728?w=600&auto=format&fit=crop&q=80',
-      backdrop: 'https://images.unsplash.com/photo-1518709268805-4e9042af9f23?w=1600&auto=format&fit=crop&q=80',
-      year: parseInt(year) || 2024,
-      releaseDate: '2024',
-      runtime: type === 'movie' ? '2h 10m' : '1 Season',
-      rating: 8.5,
+      originalTitle: retrievedMetadata?.originalTitle || title.trim(),
+      description: description.trim() || retrievedMetadata?.description || 'Curated release on bdcinemas.',
+      poster: finalPoster,
+      backdrop: finalBackdrop,
+      year: finalYear,
+      releaseDate: retrievedMetadata?.releaseDate || `${finalYear}`,
+      runtime: retrievedMetadata?.runtime || (type === 'movie' ? '2h 05m' : '1 Season'),
+      // Store real IMDb rating or undefined if unavailable - DO NOT invent fake rating!
+      rating: retrievedRating || 0,
+      imdbId: cleanedId,
+      imdbRating: retrievedRating,
+      imdbVotes: retrievedVotes,
       genres: [genre],
-      language,
-      country: language === 'Bengali' ? 'Bangladesh' : 'International',
+      language: retrievedMetadata?.language || 'Bengali',
+      country: retrievedMetadata?.country || 'Bangladesh',
       quality: '4K UHD',
       type,
-      cast: ['Lead Actor', 'Supporting Cast'],
-      director: director.trim() || 'Staff Director',
-      writer: director.trim() || 'Staff Writer',
-      views: 12000,
+      cast: retrievedMetadata?.cast || ['Cast Members'],
+      director: retrievedMetadata?.director || 'Director',
+      writer: retrievedMetadata?.writer || 'Writer',
+      views: 1200,
+      featured,
+      trending,
       published: true,
-      videoUrl: 'https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/TearsOfSteel.mp4'
+      videoUrl: finalWatchLink
     };
 
     onAddMedia(newItem);
-    setTitle('');
-    setOriginalTitle('');
-    setDirector('');
+    resetForm();
     setShowAddForm(false);
   };
 
@@ -80,16 +222,19 @@ export const AdminPage: React.FC<AdminPageProps> = ({
               <h1 className="text-2xl sm:text-3xl font-black text-white">Admin Console</h1>
             </div>
             <p className="text-xs sm:text-sm text-white/50 mt-1">
-              Live catalog management, content metadata ingestion, and performance telemetry.
+              Automated IMDb metadata integration, live catalog ingestion, and telemetry.
             </p>
           </div>
 
           <button
-            onClick={() => setShowAddForm(!showAddForm)}
+            onClick={() => {
+              setShowAddForm(!showAddForm);
+              if (!showAddForm) resetForm();
+            }}
             className="self-start sm:self-auto px-4 py-2.5 rounded-xl bg-[#E50914] hover:bg-[#ff334b] text-white text-xs font-bold flex items-center gap-2 transition shadow-lg"
           >
             <Plus className="w-4 h-4" />
-            <span>Add New Title</span>
+            <span>{showAddForm ? 'Close Form' : 'Add New Title'}</span>
           </button>
         </div>
 
@@ -136,65 +281,141 @@ export const AdminPage: React.FC<AdminPageProps> = ({
           </div>
         </div>
 
-        {/* Add Title Form */}
+        {/* Add Title Form with IMDb Auto-Retrieval */}
         {showAddForm && (
           <form
             onSubmit={handleSubmit}
-            className="mb-8 p-6 rounded-2xl bg-[#18181D] border border-[#E50914]/40 space-y-4 max-w-2xl"
+            className="mb-8 p-6 sm:p-8 rounded-2xl bg-[#18181D] border border-[#E50914]/40 space-y-6 max-w-4xl shadow-2xl transition-all"
           >
-            <h3 className="text-base font-bold text-white mb-2">Ingest New Title</h3>
+            <div>
+              <div className="flex items-center justify-between">
+                <h3 className="text-lg font-bold text-white flex items-center gap-2">
+                  <Sparkles className="w-5 h-5 text-[#E50914]" />
+                  <span>Ingest Content via IMDb Metadata</span>
+                </h3>
+                <span className="text-xs text-white/40">Step-by-step Admin Workflow</span>
+              </div>
+              <p className="text-xs text-white/50 mt-1">
+                Enter the IMDb ID and click <strong className="text-white">Fetch IMDb Data</strong> to retrieve ratings, genres, and metadata automatically without manual rating entry.
+              </p>
+            </div>
 
+            {/* IMDb ID Ingestion Toolbar */}
+            <div className="bg-black/40 border border-white/10 p-4 rounded-xl space-y-3">
+              <label className="block text-xs font-semibold text-white/90">
+                IMDb ID <span className="text-[#E50914]">*</span> (Format: tt1234567)
+              </label>
+              <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-3">
+                <div className="relative flex-1">
+                  <input
+                    type="text"
+                    value={imdbId}
+                    onChange={(e) => setImdbId(e.target.value)}
+                    placeholder="e.g. tt1375666 (Inception), tt15004776 (Hawa)"
+                    className="w-full bg-[#18181D] border border-white/20 rounded-xl px-4 py-2.5 text-sm text-white placeholder-white/30 focus:outline-none focus:ring-2 focus:ring-[#E50914]"
+                  />
+                </div>
+                <button
+                  type="button"
+                  onClick={handleFetchImdb}
+                  disabled={isFetchingImdb}
+                  className="px-5 py-2.5 rounded-xl bg-[#E50914] hover:bg-[#ff334b] text-white text-xs font-bold flex items-center justify-center gap-2 transition disabled:opacity-50 shadow-md cursor-pointer"
+                >
+                  {isFetchingImdb ? (
+                    <>
+                      <Loader2 className="w-4 h-4 animate-spin" />
+                      <span>Fetching IMDb Data...</span>
+                    </>
+                  ) : (
+                    <>
+                      <Search className="w-4 h-4" />
+                      <span>Fetch IMDb Data</span>
+                    </>
+                  )}
+                </button>
+              </div>
+
+              {/* Status & Results Banner */}
+              {fetchSuccessMessage && (
+                <div className="p-3 bg-emerald-500/10 border border-emerald-500/30 rounded-lg flex items-start gap-2.5 text-xs text-emerald-400">
+                  <CheckCircle2 className="w-4 h-4 flex-shrink-0 mt-0.5" />
+                  <div>
+                    <p className="font-semibold">{fetchSuccessMessage}</p>
+                    {retrievedRating !== undefined && (
+                      <p className="text-white mt-1">
+                        Retrieved Rating: <span className="font-black text-[#FFD700] text-sm">★ {retrievedRating.toFixed(1)}</span>
+                        {retrievedVotes && <span className="text-white/50 text-[11px] ml-1.5">({retrievedVotes} votes)</span>}
+                      </p>
+                    )}
+                  </div>
+                </div>
+              )}
+
+              {fetchError && (
+                <div className="p-3 bg-amber-500/10 border border-amber-500/30 rounded-lg flex items-start gap-2.5 text-xs text-amber-300">
+                  <AlertCircle className="w-4 h-4 flex-shrink-0 mt-0.5 text-amber-400" />
+                  <div>
+                    <p className="font-semibold">Notice</p>
+                    <p className="text-amber-200/90">{fetchError}</p>
+                  </div>
+                </div>
+              )}
+
+              {/* Auto Retrieved Badge indicator */}
+              {retrievedRating !== undefined && (
+                <div className="flex items-center gap-2 pt-1 text-xs">
+                  <span className="text-white/60">Active Ingested Rating:</span>
+                  <span className="bg-[#FFD700]/20 border border-[#FFD700]/40 text-[#FFD700] px-2.5 py-0.5 rounded-full font-bold">
+                    IMDb {retrievedRating.toFixed(1)}
+                  </span>
+                  <span className="text-emerald-400 text-[11px]">✓ No manual entry required</span>
+                </div>
+              )}
+            </div>
+
+            {/* Core Content Form Fields */}
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 text-xs">
               <div>
-                <label className="block text-white/60 mb-1">Title (English)</label>
+                <label className="block text-white/70 mb-1 font-medium">
+                  Poster URL <span className="text-[#E50914]">*</span>
+                </label>
+                <input
+                  type="url"
+                  value={poster}
+                  onChange={(e) => setPoster(e.target.value)}
+                  placeholder="https://... image poster URL"
+                  className="w-full bg-white/5 border border-white/10 rounded-xl px-3 py-2.5 text-white placeholder-white/30 focus:outline-none focus:ring-1 focus:ring-[#E50914]"
+                />
+                <span className="text-[10px] text-white/40 mt-1 block">
+                  Admin-provided poster URL overrides retrieved poster.
+                </span>
+              </div>
+
+              <div>
+                <label className="block text-white/70 mb-1 font-medium">
+                  Title <span className="text-[#E50914]">*</span>
+                </label>
                 <input
                   type="text"
                   required
                   value={title}
                   onChange={(e) => setTitle(e.target.value)}
-                  placeholder="e.g. Hawa, Karagar"
-                  className="w-full bg-white/5 border border-white/10 rounded-xl px-3 py-2 text-white placeholder-white/30 focus:outline-none focus:ring-1 focus:ring-[#E50914]"
+                  placeholder="e.g. Inception, Hawa"
+                  className="w-full bg-white/5 border border-white/10 rounded-xl px-3 py-2.5 text-white placeholder-white/30 focus:outline-none focus:ring-1 focus:ring-[#E50914]"
                 />
+                <span className="text-[10px] text-white/40 mt-1 block">
+                  Admin manual title overrides retrieved title.
+                </span>
               </div>
 
               <div>
-                <label className="block text-white/60 mb-1">Original Title (বাংলা নাম)</label>
-                <input
-                  type="text"
-                  value={originalTitle}
-                  onChange={(e) => setOriginalTitle(e.target.value)}
-                  placeholder="e.g. হাওয়া"
-                  className="w-full bg-white/5 border border-white/10 rounded-xl px-3 py-2 text-white placeholder-white/30 focus:outline-none focus:ring-1 focus:ring-[#E50914]"
-                />
-              </div>
-
-              <div>
-                <label className="block text-white/60 mb-1">Director</label>
-                <input
-                  type="text"
-                  value={director}
-                  onChange={(e) => setDirector(e.target.value)}
-                  placeholder="Director name"
-                  className="w-full bg-white/5 border border-white/10 rounded-xl px-3 py-2 text-white placeholder-white/30 focus:outline-none focus:ring-1 focus:ring-[#E50914]"
-                />
-              </div>
-
-              <div>
-                <label className="block text-white/60 mb-1">Release Year</label>
-                <input
-                  type="number"
-                  value={year}
-                  onChange={(e) => setYear(e.target.value)}
-                  className="w-full bg-white/5 border border-white/10 rounded-xl px-3 py-2 text-white focus:outline-none focus:ring-1 focus:ring-[#E50914]"
-                />
-              </div>
-
-              <div>
-                <label className="block text-white/60 mb-1">Content Type</label>
+                <label className="block text-white/70 mb-1 font-medium">
+                  Content Type <span className="text-[#E50914]">*</span>
+                </label>
                 <select
                   value={type}
                   onChange={(e) => setType(e.target.value as any)}
-                  className="w-full bg-[#18181D] border border-white/10 rounded-xl px-3 py-2 text-white focus:outline-none focus:ring-1 focus:ring-[#E50914]"
+                  className="w-full bg-[#18181D] border border-white/10 rounded-xl px-3 py-2.5 text-white focus:outline-none focus:ring-1 focus:ring-[#E50914]"
                 >
                   <option value="movie">Movie</option>
                   <option value="series">Web Series</option>
@@ -203,11 +424,36 @@ export const AdminPage: React.FC<AdminPageProps> = ({
               </div>
 
               <div>
-                <label className="block text-white/60 mb-1">Primary Genre</label>
+                <label className="block text-white/70 mb-1 font-medium">
+                  Watch Link <span className="text-[#E50914]">*</span>
+                </label>
+                <input
+                  type="url"
+                  value={watchLink}
+                  onChange={(e) => setWatchLink(e.target.value)}
+                  placeholder="https://... video stream/MP4 link"
+                  className="w-full bg-white/5 border border-white/10 rounded-xl px-3 py-2.5 text-white placeholder-white/30 focus:outline-none focus:ring-1 focus:ring-[#E50914]"
+                />
+              </div>
+
+              {/* Optional Fields */}
+              <div>
+                <label className="block text-white/70 mb-1 font-medium">Release Year (Optional)</label>
+                <input
+                  type="number"
+                  value={year}
+                  onChange={(e) => setYear(e.target.value)}
+                  placeholder="e.g. 2024"
+                  className="w-full bg-white/5 border border-white/10 rounded-xl px-3 py-2.5 text-white focus:outline-none focus:ring-1 focus:ring-[#E50914]"
+                />
+              </div>
+
+              <div>
+                <label className="block text-white/70 mb-1 font-medium">Primary Genre (Optional)</label>
                 <select
                   value={genre}
                   onChange={(e) => setGenre(e.target.value)}
-                  className="w-full bg-[#18181D] border border-white/10 rounded-xl px-3 py-2 text-white focus:outline-none focus:ring-1 focus:ring-[#E50914]"
+                  className="w-full bg-[#18181D] border border-white/10 rounded-xl px-3 py-2.5 text-white focus:outline-none focus:ring-1 focus:ring-[#E50914]"
                 >
                   <option value="Action">Action</option>
                   <option value="Thriller">Thriller</option>
@@ -217,23 +463,74 @@ export const AdminPage: React.FC<AdminPageProps> = ({
                   <option value="Sci-Fi">Sci-Fi</option>
                   <option value="Comedy">Comedy</option>
                   <option value="Romance">Romance</option>
+                  <option value="Horror">Horror</option>
+                  <option value="Adventure">Adventure</option>
                 </select>
+              </div>
+
+              <div className="sm:col-span-2">
+                <label className="block text-white/70 mb-1 font-medium">Backdrop Image URL (Optional)</label>
+                <input
+                  type="url"
+                  value={backdrop}
+                  onChange={(e) => setBackdrop(e.target.value)}
+                  placeholder="https://... wide backdrop image URL"
+                  className="w-full bg-white/5 border border-white/10 rounded-xl px-3 py-2.5 text-white placeholder-white/30 focus:outline-none focus:ring-1 focus:ring-[#E50914]"
+                />
+              </div>
+
+              <div className="sm:col-span-2">
+                <label className="block text-white/70 mb-1 font-medium">Description (Optional)</label>
+                <textarea
+                  rows={3}
+                  value={description}
+                  onChange={(e) => setDescription(e.target.value)}
+                  placeholder="Plot summary or synopsis"
+                  className="w-full bg-white/5 border border-white/10 rounded-xl px-3 py-2.5 text-white placeholder-white/30 focus:outline-none focus:ring-1 focus:ring-[#E50914] resize-none"
+                />
+              </div>
+
+              {/* Toggles */}
+              <div className="sm:col-span-2 flex items-center gap-6 pt-1">
+                <label className="flex items-center gap-2 cursor-pointer select-none">
+                  <input
+                    type="checkbox"
+                    checked={featured}
+                    onChange={(e) => setFeatured(e.target.checked)}
+                    className="w-4 h-4 rounded text-[#E50914] focus:ring-0 bg-white/10 border-white/20"
+                  />
+                  <span className="text-white/80">Feature on Hero Banner</span>
+                </label>
+
+                <label className="flex items-center gap-2 cursor-pointer select-none">
+                  <input
+                    type="checkbox"
+                    checked={trending}
+                    onChange={(e) => setTrending(e.target.checked)}
+                    className="w-4 h-4 rounded text-[#E50914] focus:ring-0 bg-white/10 border-white/20"
+                  />
+                  <span className="text-white/80">Tag as Trending</span>
+                </label>
               </div>
             </div>
 
-            <div className="flex items-center justify-end gap-3 pt-2">
+            {/* Actions */}
+            <div className="flex items-center justify-end gap-3 pt-4 border-t border-white/10">
               <button
                 type="button"
-                onClick={() => setShowAddForm(false)}
-                className="px-4 py-2 rounded-xl bg-white/10 text-white text-xs hover:bg-white/20 transition"
+                onClick={() => {
+                  resetForm();
+                  setShowAddForm(false);
+                }}
+                className="px-4 py-2.5 rounded-xl bg-white/10 text-white text-xs hover:bg-white/20 transition cursor-pointer"
               >
                 Cancel
               </button>
               <button
                 type="submit"
-                className="px-5 py-2 rounded-xl bg-[#E50914] text-white text-xs font-bold hover:bg-[#ff334b] transition shadow-lg"
+                className="px-6 py-2.5 rounded-xl bg-[#E50914] text-white text-xs font-bold hover:bg-[#ff334b] transition shadow-lg cursor-pointer"
               >
-                Publish Title
+                Publish Content
               </button>
             </div>
           </form>
@@ -243,7 +540,7 @@ export const AdminPage: React.FC<AdminPageProps> = ({
         <div className="bg-[#18181D] border border-white/10 rounded-2xl overflow-hidden">
           <div className="px-6 py-4 border-b border-white/10 flex items-center justify-between">
             <h2 className="text-sm font-bold text-white">Live Catalog Titles ({catalog.length})</h2>
-            <span className="text-xs text-white/40">Status & Operations</span>
+            <span className="text-xs text-white/40">IMDb Rating & Status</span>
           </div>
 
           <div className="divide-y divide-white/5">
@@ -259,9 +556,17 @@ export const AdminPage: React.FC<AdminPageProps> = ({
                     className="w-10 h-14 rounded-lg object-cover bg-black flex-shrink-0"
                   />
                   <div className="min-w-0">
-                    <p className="text-sm font-semibold text-white truncate">{item.title}</p>
-                    <p className="text-xs text-white/40">
-                      {item.year} • {item.type} • {item.quality} • {item.language}
+                    <div className="flex items-center gap-2">
+                      <p className="text-sm font-semibold text-white truncate">{item.title}</p>
+                      {((item.imdbRating && item.imdbRating > 0) || (item.rating && item.rating > 0)) && (
+                        <span className="bg-[#FFD700]/10 border border-[#FFD700]/30 text-[#FFD700] text-[10px] font-bold px-1.5 py-0.5 rounded">
+                          IMDb {(item.imdbRating || item.rating).toFixed(1)}
+                        </span>
+                      )}
+                    </div>
+                    <p className="text-xs text-white/40 mt-0.5">
+                      {item.year} • {item.type} • {item.genres.join(', ')} • {item.language}
+                      {item.imdbId && <span className="ml-2 font-mono text-[11px] text-white/30">[{item.imdbId}]</span>}
                     </p>
                   </div>
                 </div>
@@ -269,7 +574,7 @@ export const AdminPage: React.FC<AdminPageProps> = ({
                 <div className="flex items-center gap-2">
                   <button
                     onClick={() => onTogglePublish(item.id)}
-                    className={`p-2 rounded-lg border transition ${
+                    className={`p-2 rounded-lg border transition cursor-pointer ${
                       item.published
                         ? 'bg-[#E50914]/10 border-[#E50914]/30 text-[#E50914] hover:bg-[#E50914]/20'
                         : 'bg-white/5 border-white/10 text-white/40 hover:bg-white/10'
@@ -281,7 +586,7 @@ export const AdminPage: React.FC<AdminPageProps> = ({
 
                   <button
                     onClick={() => onDeleteMedia(item.id)}
-                    className="p-2 rounded-lg bg-white/5 hover:bg-red-500/20 border border-white/10 hover:border-red-500/30 text-white/50 hover:text-red-400 transition"
+                    className="p-2 rounded-lg bg-white/5 hover:bg-red-500/20 border border-white/10 hover:border-red-500/30 text-white/50 hover:text-red-400 transition cursor-pointer"
                     title="Delete Title"
                   >
                     <Trash2 className="w-4 h-4" />

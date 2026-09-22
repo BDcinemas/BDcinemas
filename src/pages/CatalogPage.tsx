@@ -65,7 +65,7 @@ export const CatalogPage: React.FC<CatalogPageProps> = ({
 
     // Sort
     if (sortBy === 'rating') {
-      list.sort((a, b) => b.rating - a.rating);
+      list.sort((a, b) => (b.imdbRating || b.rating || 0) - (a.imdbRating || a.rating || 0));
     } else if (sortBy === 'popular') {
       list.sort((a, b) => b.views - a.views);
     } else {

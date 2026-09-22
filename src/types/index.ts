@@ -36,6 +36,9 @@ export interface MediaItem {
   releaseDate: string;
   runtime: string;
   rating: number;
+  imdbId?: string;
+  imdbRating?: number;
+  imdbVotes?: string;
   genres: string[];
   language: string;
   country: string;
