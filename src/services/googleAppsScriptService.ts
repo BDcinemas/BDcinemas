@@ -168,6 +168,18 @@ export const googleAppsScriptService = {
     });
   },
 
+  async updateContent(
+    sessionId: string,
+    id: string,
+    content: Record<string, unknown>
+  ): Promise<ApiResponse> {
+    return post('updateContent', {
+      sessionId,
+      contentId: id,
+      content
+    });
+  },
+
   async deleteContent(
     sessionId: string,
     id: string

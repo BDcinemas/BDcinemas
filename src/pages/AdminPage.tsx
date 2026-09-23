@@ -1,7 +1,7 @@
 import React, { useEffect, useState } from 'react';
 import { MediaItem } from '../types';
 import {
-  Shield, Film, Tv, Video, Eye, Plus, Trash2, EyeOff, LogOut,
+  Shield, Film, Tv, Video, Eye, Plus, Trash2, EyeOff, Pencil, LogOut,
   Search, Loader2, CheckCircle2, AlertCircle, Sparkles, Image as ImageIcon
 } from 'lucide-react';
 import { metadataService, validateImdbId, cleanImdbId, FetchedImdbMetadata } from '../services/imdbService';
@@ -23,6 +23,7 @@ export const AdminPage: React.FC<AdminPageProps> = ({
   onSetCatalog
 }) => {
   const [showAddForm, setShowAddForm] = useState(false);
+  const [editingId, setEditingId] = useState<string | null>(null);
   const [sessionId, setSessionId] = useState<string | null>(null);
   const [adminEmail, setAdminEmail] = useState('');
   const [adminRole, setAdminRole] = useState('');
@@ -243,6 +244,7 @@ export const AdminPage: React.FC<AdminPageProps> = ({
 
   // Reset form helper
   const resetForm = () => {
+    setEditingId(null);
     setType('movie');
     setImdbId('');
     setWatchLink('');
@@ -347,6 +349,40 @@ export const AdminPage: React.FC<AdminPageProps> = ({
     } finally {
       setIsFetchingImdb(false);
     }
+  };
+
+  const handleEditBackend = (item: MediaItem) => {
+    setActionError(null);
+    setPublishSuccess(null);
+    setPublishStatusSuccess(null);
+
+    setEditingId(item.id);
+    setShowAddForm(true);
+
+    setType(item.type);
+    setImdbId(item.imdbId || '');
+    setWatchLink(item.videoUrl || '');
+    setCustomPoster(item.poster || '');
+    setTitle(item.title || '');
+    setYear(item.year ? String(item.year) : '');
+    setGenre(item.genres?.[0] || 'Drama');
+    setDescription(item.description || '');
+    setBackdrop(item.backdrop || '');
+    setFeatured(Boolean(item.featured));
+    setTrending(Boolean(item.trending));
+
+    setRetrievedRating(
+      item.imdbRating ?? item.rating ?? undefined
+    );
+
+    setRetrievedVotes(item.imdbVotes || undefined);
+    setRetrievedPoster(item.poster || undefined);
+    setRetrievedMetadata(null);
+
+    window.scrollTo({
+      top: 0,
+      behavior: 'smooth'
+    });
   };
 
   const handleTogglePublishBackend = async (item: MediaItem) => {
@@ -491,43 +527,59 @@ export const AdminPage: React.FC<AdminPageProps> = ({
       setPublishSuccess(null);
       setIsPublishing(true);
 
-      const response = await googleAppsScriptService.createContent(
-        sessionId,
-        {
-          title: newItem.title,
-          type: newItem.type,
-          imdbId: newItem.imdbId || '',
-          imdbRating: newItem.imdbRating ?? '',
-          imdbVotes: newItem.imdbVotes ?? '',
-          poster: newItem.poster,
-          backdrop: newItem.backdrop,
-          year: newItem.year,
-          runtime: newItem.runtime,
-          genres: newItem.genres.join(', '),
-          description: newItem.description,
-          cast: newItem.cast.join(', '),
-          director: newItem.director,
-          writer: newItem.writer,
-          watchUrl: newItem.videoUrl || '',
-          featured: newItem.featured,
-          trending: newItem.trending,
-          latest: true,
-          published: true
-        }
-      );
+      const contentPayload = {
+        title: newItem.title,
+        type: newItem.type,
+        imdbId: newItem.imdbId || '',
+        imdbRating: newItem.imdbRating ?? '',
+        imdbVotes: newItem.imdbVotes ?? '',
+        poster: newItem.poster,
+        backdrop: newItem.backdrop,
+        year: newItem.year,
+        runtime: newItem.runtime,
+        genres: newItem.genres.join(', '),
+        description: newItem.description,
+        cast: newItem.cast.join(', '),
+        director: newItem.director,
+        writer: newItem.writer,
+        watchUrl: newItem.videoUrl || '',
+        featured: newItem.featured,
+        trending: newItem.trending,
+        latest: true
+      };
+
+      let response;
+
+      if (editingId) {
+        response = await googleAppsScriptService.updateContent(
+          sessionId,
+          editingId,
+          contentPayload
+        );
+      } else {
+        response = await googleAppsScriptService.createContent(
+          sessionId,
+          {
+            ...contentPayload,
+            published: true
+          }
+        );
+      }
 
       if (!response.success) {
         throw new Error(
           response.error ||
           response.message ||
-          'Content could not be saved to Google Sheets.'
+          editingId ? 'Content could not be updated.' : 'Content could not be saved to Google Sheets.'
         );
       }
 
       await refreshAdminCatalog(sessionId);
 
       setPublishSuccess(
-        `"${newItem.title}" has been published successfully.`
+        editingId
+          ? `"${newItem.title}" updated successfully.`
+          : `"${newItem.title}" has been published successfully.`
       );
 
       resetForm();
@@ -1070,10 +1122,10 @@ export const AdminPage: React.FC<AdminPageProps> = ({
                   {isPublishing ? (
                     <>
                       <Loader2 className="w-4 h-4 animate-spin" />
-                      Publishing...
+                      {editingId ? 'Saving...' : 'Publishing...'}
                     </>
                   ) : (
-                    'Publish Content'
+                    editingId ? 'Save Changes' : 'Publish Content'
                   )}
                 </button>
               </div>
@@ -1138,6 +1190,14 @@ export const AdminPage: React.FC<AdminPageProps> = ({
                 </div>
 
                 <div className="flex items-center gap-2">
+                  <button
+                    onClick={() => handleEditBackend(item)}
+                    className="p-2 rounded-lg bg-white/5 hover:bg-white/10 border border-white/10 text-white/50 hover:text-white transition cursor-pointer"
+                    title="Edit Title"
+                  >
+                    <Pencil className="w-4 h-4" />
+                  </button>
+
                   <button
                     onClick={() => handleTogglePublishBackend(item)}
                     disabled={updatingPublishId === item.id}

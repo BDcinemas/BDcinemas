@@ -11,6 +11,117 @@ const SESSION_HOURS = 24;
 // GET REQUEST
 // ================================
 
+
+function getImdbMetadata(imdbId) {
+  const match = String(imdbId || "").trim().match(/^tt\d{7,9}$/i);
+
+  if (!match) {
+    return {
+      success: false,
+      error: "Invalid IMDb ID format."
+    };
+  }
+
+  const cleanId = match[0].toLowerCase();
+
+  const apiKey = PropertiesService
+    .getScriptProperties()
+    .getProperty("OMDB_API_KEY");
+
+  if (!apiKey) {
+    return {
+      success: false,
+      error: "OMDB_API_KEY is not configured on the server."
+    };
+  }
+
+  try {
+    const response = UrlFetchApp.fetch(
+      "https://www.omdbapi.com/?i=" +
+      encodeURIComponent(cleanId) +
+      "&apikey=" +
+      encodeURIComponent(apiKey),
+      {
+        method: "get",
+        muteHttpExceptions: true
+      }
+    );
+
+    const data = JSON.parse(response.getContentText());
+
+    if (data.Response !== "True") {
+      return {
+        success: false,
+        error: data.Error || "IMDb metadata not found."
+      };
+    }
+
+    return {
+      success: true,
+      data: {
+        imdbId: cleanId,
+        imdbRating: data.imdbRating !== "N/A"
+          ? Number(data.imdbRating)
+          : undefined,
+        imdbVotes: data.imdbVotes !== "N/A"
+          ? data.imdbVotes
+          : undefined,
+        title: data.Title !== "N/A"
+          ? data.Title
+          : undefined,
+        originalTitle: data.Title !== "N/A"
+          ? data.Title
+          : undefined,
+        year: data.Year !== "N/A"
+          ? Number(String(data.Year).slice(0, 4))
+          : undefined,
+        releaseDate: data.Released !== "N/A"
+          ? data.Released
+          : undefined,
+        runtime: data.Runtime !== "N/A"
+          ? data.Runtime
+          : undefined,
+        genres: data.Genre !== "N/A"
+          ? data.Genre.split(",").map(function(g) {
+              return g.trim();
+            })
+          : undefined,
+        poster: data.Poster !== "N/A"
+          ? data.Poster
+          : undefined,
+        backdrop: data.Poster !== "N/A"
+          ? data.Poster
+          : undefined,
+        description: data.Plot !== "N/A"
+          ? data.Plot
+          : undefined,
+        director: data.Director !== "N/A"
+          ? data.Director
+          : undefined,
+        writer: data.Writer !== "N/A"
+          ? data.Writer
+          : undefined,
+        cast: data.Actors !== "N/A"
+          ? data.Actors.split(",").map(function(a) {
+              return a.trim();
+            })
+          : undefined,
+        country: data.Country !== "N/A"
+          ? data.Country
+          : undefined,
+        language: data.Language !== "N/A"
+          ? data.Language.split(",")[0].trim()
+          : undefined
+      }
+    };
+  } catch (error) {
+    return {
+      success: false,
+      error: error.message
+    };
+  }
+}
+
 function doGet(e) {
 
   try {
@@ -29,6 +140,12 @@ function doGet(e) {
 
     }
 
+
+    if (action === "metadata") {
+      return json(
+        getImdbMetadata(e.parameter.imdbId)
+      );
+    }
 
     if (action === "published") {
 
@@ -114,6 +231,13 @@ function doPost(e) {
         );
 
 
+      case "getPublished":
+        return json({
+          success: true,
+          data: getPublishedContent()
+        });
+
+
       case "getContent":
         return json(
           getAllContent(
@@ -140,6 +264,15 @@ function doPost(e) {
           )
         );
 
+
+      case "updateContent":
+        return json(
+          updateContent(
+            data.sessionId,
+            data.contentId,
+            data.content
+          )
+        );
 
       case "deleteContent":
         return json(
@@ -995,6 +1128,78 @@ function publishContent(
 // DELETE CONTENT
 // ================================
 
+function updateContent(
+  sessionId,
+  contentId,
+  content
+) {
+  const auth = checkSession(sessionId);
+
+  if (!auth.success) {
+    return auth;
+  }
+
+  if (!content) {
+    return {
+      success: false,
+      error: "Content data is required"
+    };
+  }
+
+  const sheet = getSheet(CONTENT_SHEET);
+  const values = sheet.getDataRange().getValues();
+
+  for (let i = 1; i < values.length; i++) {
+    if (
+      String(values[i][0]) ===
+      String(contentId)
+    ) {
+      const currentPublished =
+        values[i][19] === true ||
+        String(values[i][19] || "").toLowerCase() === "true";
+
+      sheet
+        .getRange(i + 1, 2, 1, 19)
+        .setValues([[
+          content.title || "",
+          content.type || "movie",
+          content.imdbId || "",
+          content.imdbRating || "",
+          content.imdbVotes || "",
+          content.poster || "",
+          content.backdrop || "",
+          content.year || "",
+          content.runtime || "",
+          content.genres || "",
+          content.description || "",
+          content.cast || "",
+          content.director || "",
+          content.writer || "",
+          content.watchUrl || "",
+          content.featured || false,
+          content.trending || false,
+          content.latest !== undefined ? content.latest : true,
+          content.published !== undefined
+            ? Boolean(content.published)
+            : currentPublished
+        ]]);
+
+      SpreadsheetApp.flush();
+
+      return {
+        success: true,
+        message: "Content updated successfully",
+        contentId: String(contentId)
+      };
+    }
+  }
+
+  return {
+    success: false,
+    error: "Content not found"
+  };
+}
+
 function deleteContent(
   sessionId,
   contentId
@@ -1225,3 +1430,4 @@ function testDatabaseConnection() {
 
   SpreadsheetApp.flush();
 }
+
