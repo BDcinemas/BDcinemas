@@ -17,8 +17,18 @@ export const Navbar: React.FC<NavbarProps> = ({ watchlistCount }) => {
     const handleScroll = () => {
       setIsScrolled(window.scrollY > 20);
     };
+
+    const handleOpenMenu = () => {
+      setMobileMenuOpen(true);
+    };
+
     window.addEventListener('scroll', handleScroll);
-    return () => window.removeEventListener('scroll', handleScroll);
+    window.addEventListener('bdcinemas:open-menu', handleOpenMenu);
+
+    return () => {
+      window.removeEventListener('scroll', handleScroll);
+      window.removeEventListener('bdcinemas:open-menu', handleOpenMenu);
+    };
   }, []);
 
   const handleSearchSubmit = (e: React.FormEvent) => {

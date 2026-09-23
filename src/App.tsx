@@ -6,6 +6,7 @@ import { googleAppsScriptService } from './services/googleAppsScriptService';
 import { useWatchlist } from './hooks/useWatchlist';
 import { Navbar } from './components/Navbar';
 import { Footer } from './components/Footer';
+import { BottomNavigation } from './components/BottomNavigation';
 import { VideoPlayerModal } from './components/VideoPlayerModal';
 
 import { HomePage } from './pages/HomePage';
@@ -336,11 +337,13 @@ export const App: React.FC = () => {
     <div className="min-h-screen bg-[#0A0A0C] text-[#F5F5F7] flex flex-col font-sans selection:bg-[#E50914] selection:text-white">
       <Navbar watchlistCount={watchlist.length} />
 
-      <main className="flex-1">
+      <main className="flex-1 pb-20 md:pb-0">
         {renderCurrentPage()}
       </main>
 
       <Footer />
+
+      <BottomNavigation />
 
       {/* Fullscreen Video Player Modal */}
       {playingMedia && (
