@@ -35,6 +35,8 @@ export const AdminPage: React.FC<AdminPageProps> = ({
   const [isSyncingCatalog, setIsSyncingCatalog] = useState(false);
   const [isPublishing, setIsPublishing] = useState(false);
   const [publishSuccess, setPublishSuccess] = useState<string | null>(null);
+  const [updatingPublishId, setUpdatingPublishId] = useState<string | null>(null);
+  const [publishStatusSuccess, setPublishStatusSuccess] = useState<string | null>(null);
 
   useEffect(() => {
     let cancelled = false;
@@ -354,12 +356,16 @@ export const AdminPage: React.FC<AdminPageProps> = ({
     }
 
     setActionError(null);
+    setPublishStatusSuccess(null);
+    setUpdatingPublishId(item.id);
+
+    const nextPublishedState = !item.published;
 
     try {
       const response = await googleAppsScriptService.publishContent(
         sessionId,
         item.id,
-        !item.published
+        nextPublishedState
       );
 
       if (!response.success) {
@@ -371,12 +377,18 @@ export const AdminPage: React.FC<AdminPageProps> = ({
       }
 
       await refreshAdminCatalog(sessionId);
+
+      setPublishStatusSuccess(
+        `"${item.title}" ${nextPublishedState ? 'Published Successfully' : 'Unpublished Successfully'}`
+      );
     } catch (error: any) {
       console.error('Failed to update publish status:', error);
       setActionError(
         error?.message ||
         'Failed to update publish status.'
       );
+    } finally {
+      setUpdatingPublishId(null);
     }
   };
 
@@ -1069,6 +1081,21 @@ export const AdminPage: React.FC<AdminPageProps> = ({
           </form>
         )}
 
+        {publishStatusSuccess && (
+          <div className="mb-4 flex items-center gap-3 rounded-xl border border-emerald-500/20 bg-emerald-500/10 px-4 py-3 text-emerald-400">
+            <CheckCircle2 className="w-5 h-5 flex-shrink-0" />
+            <span className="text-sm font-medium">{publishStatusSuccess}</span>
+            <button
+              type="button"
+              onClick={() => setPublishStatusSuccess(null)}
+              className="ml-auto text-emerald-400/60 hover:text-emerald-400 text-lg leading-none"
+              aria-label="Dismiss"
+            >
+              ×
+            </button>
+          </div>
+        )}
+
         {/* Content Management Table */}
         <div className="bg-[#18181D] border border-white/10 rounded-2xl overflow-hidden">
           <div className="px-6 py-4 border-b border-white/10 flex items-center justify-between">
@@ -1113,14 +1140,21 @@ export const AdminPage: React.FC<AdminPageProps> = ({
                 <div className="flex items-center gap-2">
                   <button
                     onClick={() => handleTogglePublishBackend(item)}
-                    className={`p-2 rounded-lg border transition cursor-pointer ${
+                    disabled={updatingPublishId === item.id}
+                    className={`p-2 rounded-lg border transition cursor-pointer disabled:opacity-60 disabled:cursor-wait ${
                       item.published
                         ? 'bg-[#E50914]/10 border-[#E50914]/30 text-[#E50914] hover:bg-[#E50914]/20'
                         : 'bg-white/5 border-white/10 text-white/40 hover:bg-white/10'
                     }`}
                     title={item.published ? 'Published (Click to unpublish)' : 'Unpublished (Click to publish)'}
                   >
-                    {item.published ? <Eye className="w-4 h-4" /> : <EyeOff className="w-4 h-4" />}
+                    {updatingPublishId === item.id ? (
+                      <Loader2 className="w-4 h-4 animate-spin" />
+                    ) : item.published ? (
+                      <Eye className="w-4 h-4" />
+                    ) : (
+                      <EyeOff className="w-4 h-4" />
+                    )}
                   </button>
 
                   <button
