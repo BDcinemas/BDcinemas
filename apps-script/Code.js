@@ -920,7 +920,12 @@ function createContent(
 
     content.published || false,
 
-    new Date()
+    new Date(),
+      JSON.stringify(
+        Array.isArray(content.seasons)
+          ? content.seasons
+          : []
+      )
 
   ]);
 
@@ -1184,7 +1189,16 @@ function updateContent(
             : currentPublished
         ]]);
 
-      SpreadsheetApp.flush();
+      const seasonsValue =
+          Array.isArray(content.seasons)
+            ? JSON.stringify(content.seasons)
+            : "[]";
+
+        sheet
+          .getRange(i + 1, 22)
+          .setValue(seasonsValue);
+
+        SpreadsheetApp.flush();
 
       return {
         success: true,
@@ -1285,6 +1299,22 @@ function rowToContent(row) {
   const featured = row[16] === true || String(row[16] || "").toLowerCase() === "true";
   const trending = row[17] === true || String(row[17] || "").toLowerCase() === "true";
   const latest = row[18] === true || String(row[18] || "").toLowerCase() === "true";
+    let seasons = [];
+
+    try {
+      const seasonsValue = String(row[21] || "").trim();
+
+      if (seasonsValue) {
+        const parsedSeasons = JSON.parse(seasonsValue);
+
+        if (Array.isArray(parsedSeasons)) {
+          seasons = parsedSeasons;
+        }
+      }
+    } catch (error) {
+      seasons = [];
+    }
+
 
   const createdAt = row[20] ? new Date(row[20]).toISOString() : new Date().toISOString();
 
@@ -1315,7 +1345,7 @@ function rowToContent(row) {
     featured: featured,
     trending: trending,
     comingSoon: false,
-    seasons: [],
+    seasons: seasons,
     videoUrl: String(row[15] || ""),
     trailerUrl: "",
     published: published,

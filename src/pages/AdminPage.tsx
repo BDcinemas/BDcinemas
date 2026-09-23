@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from 'react';
-import { MediaItem } from '../types';
+import { MediaItem, Season, Episode } from '../types';
 import {
   Shield, Film, Tv, Video, Eye, Plus, Trash2, EyeOff, Pencil, LogOut,
   Search, Loader2, CheckCircle2, AlertCircle, Sparkles, Image as ImageIcon
@@ -208,6 +208,14 @@ export const AdminPage: React.FC<AdminPageProps> = ({
   const [type, setType] = useState<'movie' | 'series' | 'tv-show'>('movie');
   const [imdbId, setImdbId] = useState('');
   const [watchLink, setWatchLink] = useState('');
+
+  // Season / Episode editor
+  const [seasons, setSeasons] = useState<Season[]>([]);
+  const [newSeasonTitle, setNewSeasonTitle] = useState('');
+  const [newEpisodeSeasonNumber, setNewEpisodeSeasonNumber] = useState<number | null>(null);
+  const [newEpisodeTitle, setNewEpisodeTitle] = useState('');
+  const [newEpisodeVideoUrl, setNewEpisodeVideoUrl] = useState('');
+  const [editingEpisodeId, setEditingEpisodeId] = useState<string | null>(null);
   const [customPoster, setCustomPoster] = useState('');
 
   // Automatically populated fields (can be reviewed / adjusted before publishing)
@@ -248,6 +256,12 @@ export const AdminPage: React.FC<AdminPageProps> = ({
     setType('movie');
     setImdbId('');
     setWatchLink('');
+    setSeasons([]);
+    setNewSeasonTitle('');
+    setNewEpisodeSeasonNumber(null);
+    setNewEpisodeTitle('');
+    setNewEpisodeVideoUrl('');
+    setEditingEpisodeId(null);
     setCustomPoster('');
     setTitle('');
     setYear('');
@@ -351,12 +365,188 @@ export const AdminPage: React.FC<AdminPageProps> = ({
     }
   };
 
+  const addSeason = () => {
+    const nextSeasonNumber =
+      seasons.length > 0
+        ? Math.max(
+            ...seasons.map(
+              (season) => Number(season.seasonNumber) || 0
+            )
+          ) + 1
+        : 1;
+
+    const newSeason: Season = {
+      seasonNumber: nextSeasonNumber,
+      title:
+        newSeasonTitle.trim() ||
+        `Season ${nextSeasonNumber}`,
+      episodes: []
+    };
+
+    setSeasons((current) => [...current, newSeason]);
+    setNewSeasonTitle('');
+  };
+
+  const updateSeasonTitle = (
+    seasonNumber: number,
+    value: string
+  ) => {
+    setSeasons((current) =>
+      current.map((season) =>
+        season.seasonNumber === seasonNumber
+          ? { ...season, title: value }
+          : season
+      )
+    );
+  };
+
+  const removeSeason = (seasonNumber: number) => {
+    setSeasons((current) =>
+      current.filter(
+        (season) => season.seasonNumber !== seasonNumber
+      )
+    );
+
+    if (newEpisodeSeasonNumber === seasonNumber) {
+      setNewEpisodeSeasonNumber(null);
+      setNewEpisodeTitle('');
+      setNewEpisodeVideoUrl('');
+      setEditingEpisodeId(null);
+    }
+  };
+
+  const startAddEpisode = (seasonNumber: number) => {
+    setNewEpisodeSeasonNumber(seasonNumber);
+    setEditingEpisodeId(null);
+    setNewEpisodeTitle('');
+    setNewEpisodeVideoUrl('');
+    setFetchError(null);
+  };
+
+  const addOrUpdateEpisode = (seasonNumber: number) => {
+    const episodeTitle = newEpisodeTitle.trim();
+    const episodeVideoUrl = newEpisodeVideoUrl.trim();
+
+    if (!episodeTitle) {
+      setFetchError('Episode title is required.');
+      return;
+    }
+
+    if (!episodeVideoUrl) {
+      setFetchError('Episode Watch Link is required.');
+      return;
+    }
+
+    setSeasons((current) =>
+      current.map((season) => {
+        if (season.seasonNumber !== seasonNumber) {
+          return season;
+        }
+
+        if (editingEpisodeId) {
+          return {
+            ...season,
+            episodes: season.episodes.map((episode) =>
+              episode.id === editingEpisodeId
+                ? {
+                    ...episode,
+                    title: episodeTitle,
+                    videoUrl: episodeVideoUrl
+                  }
+                : episode
+            )
+          };
+        }
+
+        const nextEpisodeNumber =
+          season.episodes.length > 0
+            ? Math.max(
+                ...season.episodes.map(
+                  (episode) =>
+                    Number(episode.episodeNumber) || 0
+                )
+              ) + 1
+            : 1;
+
+        const episode: Episode = {
+          id: `episode-${Date.now()}-${nextEpisodeNumber}`,
+          episodeNumber: nextEpisodeNumber,
+          title: episodeTitle,
+          description: '',
+          thumbnail: '',
+          duration: '',
+          durationSeconds: 0,
+          releaseDate: '',
+          videoUrl: episodeVideoUrl
+        };
+
+        return {
+          ...season,
+          episodes: [...season.episodes, episode]
+        };
+      })
+    );
+
+    setNewEpisodeTitle('');
+    setNewEpisodeVideoUrl('');
+    setEditingEpisodeId(null);
+    setNewEpisodeSeasonNumber(null);
+    setFetchError(null);
+  };
+
+  const startEditEpisode = (
+    seasonNumber: number,
+    episode: Episode
+  ) => {
+    setNewEpisodeSeasonNumber(seasonNumber);
+    setEditingEpisodeId(episode.id);
+    setNewEpisodeTitle(episode.title || '');
+    setNewEpisodeVideoUrl(episode.videoUrl || '');
+    setFetchError(null);
+  };
+
+  const removeEpisode = (
+    seasonNumber: number,
+    episodeId: string
+  ) => {
+    setSeasons((current) =>
+      current.map((season) =>
+        season.seasonNumber === seasonNumber
+          ? {
+              ...season,
+              episodes: season.episodes.filter(
+                (episode) => episode.id !== episodeId
+              )
+            }
+          : season
+      )
+    );
+
+    if (editingEpisodeId === episodeId) {
+      setEditingEpisodeId(null);
+      setNewEpisodeSeasonNumber(null);
+      setNewEpisodeTitle('');
+      setNewEpisodeVideoUrl('');
+    }
+  };
+
   const handleEditBackend = (item: MediaItem) => {
     setActionError(null);
     setPublishSuccess(null);
     setPublishStatusSuccess(null);
 
     setEditingId(item.id);
+
+    setSeasons(
+      Array.isArray(item.seasons)
+        ? item.seasons
+        : []
+    );
+    setNewSeasonTitle('');
+    setNewEpisodeSeasonNumber(null);
+    setNewEpisodeTitle('');
+    setNewEpisodeVideoUrl('');
+    setEditingEpisodeId(null);
     setShowAddForm(true);
 
     setType(item.type);
@@ -491,6 +681,8 @@ export const AdminPage: React.FC<AdminPageProps> = ({
     const finalPoster = resolvedPoster || 'https://images.unsplash.com/photo-1485846234645-a62644f84728?w=600&auto=format&fit=crop&q=80';
     const finalBackdrop = backdrop.trim() || retrievedMetadata?.backdrop || finalPoster;
     const finalWatchLink = watchLink.trim();
+    const isEpisodicType =
+      type === 'series' || type === 'tv-show';
 
     const newItem: MediaItem = {
       id: `title-${Date.now()}`,
@@ -519,7 +711,8 @@ export const AdminPage: React.FC<AdminPageProps> = ({
       featured,
       trending,
       published: true,
-      videoUrl: finalWatchLink
+      videoUrl: finalWatchLink,
+    seasons: isEpisodicType ? seasons : []
     };
 
     try {
@@ -545,7 +738,8 @@ export const AdminPage: React.FC<AdminPageProps> = ({
         watchUrl: newItem.videoUrl || '',
         featured: newItem.featured,
         trending: newItem.trending,
-        latest: true
+        latest: true,
+      seasons: newItem.seasons || []
       };
 
       let response;
@@ -975,6 +1169,217 @@ export const AdminPage: React.FC<AdminPageProps> = ({
                   The playable media stream URL for the public player modal.
                 </span>
               </div>
+
+              {(type === 'series' || type === 'tv-show') && (
+                <div className="sm:col-span-2 bg-black/30 border border-white/10 rounded-xl p-4 sm:p-5">
+                  <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 mb-4">
+                    <div>
+                      <h4 className="text-sm font-bold text-white flex items-center gap-2">
+                        <Video className="w-4 h-4 text-[#E50914]" />
+                        Season & Episode Management
+                      </h4>
+                      <p className="text-[10px] text-white/40 mt-1">
+                        Add seasons and episodes with individual watch links.
+                      </p>
+                    </div>
+
+                    <div className="flex items-center gap-2">
+                      <input
+                        type="text"
+                        value={newSeasonTitle}
+                        onChange={(e) => setNewSeasonTitle(e.target.value)}
+                        placeholder={`Season ${seasons.length + 1} title`}
+                        className="w-full sm:w-48 bg-[#18181D] border border-white/10 rounded-lg px-3 py-2 text-xs text-white placeholder-white/30 focus:outline-none focus:ring-1 focus:ring-[#E50914]"
+                      />
+
+                      <button
+                        type="button"
+                        onClick={addSeason}
+                        className="shrink-0 px-3 py-2 rounded-lg bg-[#E50914] hover:bg-[#ff334b] text-white text-xs font-bold flex items-center gap-1.5 transition"
+                      >
+                        <Plus className="w-3.5 h-3.5" />
+                        Add Season
+                      </button>
+                    </div>
+                  </div>
+
+                  {seasons.length === 0 ? (
+                    <div className="rounded-lg border border-dashed border-white/10 p-5 text-center">
+                      <p className="text-xs text-white/30">
+                        No seasons added yet.
+                      </p>
+                    </div>
+                  ) : (
+                    <div className="space-y-4">
+                      {seasons.map((season) => (
+                        <div
+                          key={season.seasonNumber}
+                          className="rounded-xl border border-white/10 bg-[#18181D] overflow-hidden"
+                        >
+                          <div className="p-3 border-b border-white/10 flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+                            <div className="flex items-center gap-2 min-w-0">
+                              <span className="shrink-0 w-8 h-8 rounded-lg bg-[#E50914]/10 border border-[#E50914]/20 flex items-center justify-center text-xs font-black text-[#E50914]">
+                                {season.seasonNumber}
+                              </span>
+
+                              <input
+                                type="text"
+                                value={season.title}
+                                onChange={(e) =>
+                                  updateSeasonTitle(
+                                    season.seasonNumber,
+                                    e.target.value
+                                  )
+                                }
+                                className="min-w-0 flex-1 bg-white/5 border border-white/10 rounded-lg px-3 py-2 text-sm font-bold text-white focus:outline-none focus:ring-1 focus:ring-[#E50914]"
+                              />
+
+                              <span className="text-[10px] text-white/30 whitespace-nowrap">
+                                {season.episodes.length} episode{season.episodes.length === 1 ? '' : 's'}
+                              </span>
+                            </div>
+
+                            <div className="flex items-center gap-2">
+                              <button
+                                type="button"
+                                onClick={() =>
+                                  startAddEpisode(season.seasonNumber)
+                                }
+                                className="px-3 py-1.5 rounded-lg bg-white/10 hover:bg-white/20 text-white text-[11px] font-semibold flex items-center gap-1.5 transition"
+                              >
+                                <Plus className="w-3.5 h-3.5" />
+                                Episode
+                              </button>
+
+                              <button
+                                type="button"
+                                onClick={() =>
+                                  removeSeason(season.seasonNumber)
+                                }
+                                className="p-1.5 rounded-lg bg-red-500/10 hover:bg-red-500/20 text-red-400 transition"
+                                title="Delete Season"
+                              >
+                                <Trash2 className="w-3.5 h-3.5" />
+                              </button>
+                            </div>
+                          </div>
+
+                          {newEpisodeSeasonNumber === season.seasonNumber && (
+                            <div className="p-3 border-b border-white/10 bg-black/20">
+                              <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                                <input
+                                  type="text"
+                                  value={newEpisodeTitle}
+                                  onChange={(e) =>
+                                    setNewEpisodeTitle(e.target.value)
+                                  }
+                                  placeholder={`Episode ${season.episodes.length + 1} title`}
+                                  className="bg-white/5 border border-white/10 rounded-lg px-3 py-2.5 text-xs text-white placeholder-white/30 focus:outline-none focus:ring-1 focus:ring-[#E50914]"
+                                />
+
+                                <input
+                                  type="url"
+                                  value={newEpisodeVideoUrl}
+                                  onChange={(e) =>
+                                    setNewEpisodeVideoUrl(e.target.value)
+                                  }
+                                  placeholder="Episode Watch / Video URL"
+                                  className="bg-white/5 border border-white/10 rounded-lg px-3 py-2.5 text-xs text-white placeholder-white/30 focus:outline-none focus:ring-1 focus:ring-[#E50914]"
+                                />
+                              </div>
+
+                              <div className="flex justify-end gap-2 mt-2">
+                                <button
+                                  type="button"
+                                  onClick={() => {
+                                    setNewEpisodeSeasonNumber(null);
+                                    setEditingEpisodeId(null);
+                                    setNewEpisodeTitle('');
+                                    setNewEpisodeVideoUrl('');
+                                  }}
+                                  className="px-3 py-1.5 rounded-lg bg-white/5 hover:bg-white/10 text-white/60 text-[11px]"
+                                >
+                                  Cancel
+                                </button>
+
+                                <button
+                                  type="button"
+                                  onClick={() =>
+                                    addOrUpdateEpisode(
+                                      season.seasonNumber
+                                    )
+                                  }
+                                  className="px-3 py-1.5 rounded-lg bg-[#E50914] hover:bg-[#ff334b] text-white text-[11px] font-bold"
+                                >
+                                  {editingEpisodeId
+                                    ? 'Update Episode'
+                                    : 'Add Episode'}
+                                </button>
+                              </div>
+                            </div>
+                          )}
+
+                          <div className="divide-y divide-white/5">
+                            {season.episodes.length === 0 ? (
+                              <div className="p-4 text-center text-[11px] text-white/25">
+                                No episodes in this season.
+                              </div>
+                            ) : (
+                              season.episodes.map((episode) => (
+                                <div
+                                  key={episode.id}
+                                  className="p-3 flex items-center gap-3"
+                                >
+                                  <span className="shrink-0 text-[11px] font-bold text-white/40 w-8">
+                                    E{String(episode.episodeNumber).padStart(2, '0')}
+                                  </span>
+
+                                  <div className="min-w-0 flex-1">
+                                    <p className="text-xs font-semibold text-white truncate">
+                                      {episode.title}
+                                    </p>
+                                    <p className="text-[10px] text-white/30 truncate mt-0.5">
+                                      {episode.videoUrl || 'No video URL'}
+                                    </p>
+                                  </div>
+
+                                  <button
+                                    type="button"
+                                    onClick={() =>
+                                      startEditEpisode(
+                                        season.seasonNumber,
+                                        episode
+                                      )
+                                    }
+                                    className="p-1.5 rounded-lg bg-white/5 hover:bg-white/10 text-white/60 hover:text-white transition"
+                                    title="Edit Episode"
+                                  >
+                                    <Pencil className="w-3.5 h-3.5" />
+                                  </button>
+
+                                  <button
+                                    type="button"
+                                    onClick={() =>
+                                      removeEpisode(
+                                        season.seasonNumber,
+                                        episode.id
+                                      )
+                                    }
+                                    className="p-1.5 rounded-lg bg-red-500/10 hover:bg-red-500/20 text-red-400 transition"
+                                    title="Delete Episode"
+                                  >
+                                    <Trash2 className="w-3.5 h-3.5" />
+                                  </button>
+                                </div>
+                              ))
+                            )}
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              )}
 
               {/* Custom Poster Override (Optional) */}
               <div className="sm:col-span-2">

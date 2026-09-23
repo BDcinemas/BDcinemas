@@ -29,7 +29,18 @@ export const MovieCard: React.FC<MovieCardProps> = ({
   };
 
   return (
-    <div className="group relative flex flex-col cursor-pointer select-none">
+    <div
+      className="group relative flex flex-col cursor-pointer select-none"
+      onClick={handleCardClick}
+      role="link"
+      tabIndex={0}
+      onKeyDown={(e) => {
+        if (e.key === 'Enter' || e.key === ' ') {
+          e.preventDefault();
+          handleCardClick();
+        }
+      }}
+    >
       {/* 2:3 Poster Container */}
       <div className="relative aspect-[2/3] w-full rounded-xl overflow-hidden bg-[#18181D] border border-white/5 shadow-lg transition-all duration-300 group-hover:scale-[1.03] group-hover:shadow-[0_12px_30px_rgba(0,0,0,0.8)] group-hover:border-white/20">
         <img
@@ -113,7 +124,7 @@ export const MovieCard: React.FC<MovieCardProps> = ({
       </div>
 
       {/* Title & Metadata under Poster */}
-      <div className="mt-2.5 px-0.5" onClick={handleCardClick}>
+      <div className="mt-2.5 px-0.5">
         <h3 className="text-xs sm:text-sm font-semibold text-white/95 truncate group-hover:text-white transition">
           {item.title}
         </h3>

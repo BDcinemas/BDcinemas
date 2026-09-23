@@ -71,26 +71,6 @@ export const App: React.FC = () => {
   const [playingEpisodeId, setPlayingEpisodeId] = useState<string | undefined>(undefined);
 
   const handlePlay = (item: MediaItem, episodeId?: string) => {
-    const videoUrl = episodeId
-      ? item.seasons?.flatMap((season) => season.episodes).find((episode) => episode.id === episodeId)?.videoUrl
-      : item.videoUrl;
-
-    if (videoUrl) {
-      const normalizedUrl = videoUrl.trim().toLowerCase();
-      const isDirectMedia =
-        normalizedUrl.includes('.mp4') ||
-        normalizedUrl.includes('.webm') ||
-        normalizedUrl.includes('.ogg') ||
-        normalizedUrl.includes('.m3u8') ||
-        normalizedUrl.includes('.mov') ||
-        normalizedUrl.includes('.m4v');
-
-      if (!isDirectMedia) {
-        window.open(videoUrl, '_blank', 'noopener,noreferrer');
-        return;
-      }
-    }
-
     setPlayingMedia(item);
     setPlayingEpisodeId(episodeId);
   };

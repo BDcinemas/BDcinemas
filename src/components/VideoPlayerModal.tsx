@@ -57,7 +57,20 @@ export const VideoPlayerModal: React.FC<VideoPlayerModalProps> = ({
     currentEpisode = allEpisodes.find((e) => e.id === episodeId) || allEpisodes[0];
   }
 
-  const activeVideoUrl = currentEpisode?.videoUrl || media.videoUrl || 'https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/TearsOfSteel.mp4';
+  const activeVideoUrl =
+    currentEpisode?.videoUrl ||
+    media.videoUrl ||
+    '';
+
+  const normalizedVideoUrl = activeVideoUrl.trim().toLowerCase();
+
+  const isDirectMedia =
+    normalizedVideoUrl.includes('.mp4') ||
+    normalizedVideoUrl.includes('.webm') ||
+    normalizedVideoUrl.includes('.ogg') ||
+    normalizedVideoUrl.includes('.m3u8') ||
+    normalizedVideoUrl.includes('.mov') ||
+    normalizedVideoUrl.includes('.m4v');
 
   // Controls auto-hide timer
   const controlsTimeoutRef = useRef<number | null>(null);
@@ -161,34 +174,69 @@ export const VideoPlayerModal: React.FC<VideoPlayerModalProps> = ({
       onClick={resetControlsTimeout}
       className="fixed inset-0 z-50 bg-black flex items-center justify-center select-none"
     >
-      {/* Video Element */}
-      <video
-        ref={videoRef}
-        src={activeVideoUrl}
-        autoPlay
-        playsInline
-        onTimeUpdate={() => {
-          if (videoRef.current) {
-            const cur = videoRef.current.currentTime;
-            const dur = videoRef.current.duration || 1;
-            setCurrentTime(cur);
-            setDuration(dur);
-            onProgressUpdate(media.id, currentEpisode?.id, cur, dur);
-          }
-        }}
-        onLoadedMetadata={() => {
-          if (videoRef.current) {
-            setDuration(videoRef.current.duration);
-            videoRef.current.playbackRate = selectedSpeed;
-          }
-        }}
-        onEnded={() => {
-          setIsPlaying(false);
-          handleNextEpisode();
-        }}
-        onClick={togglePlay}
-        className="w-full h-full object-contain cursor-pointer"
-      />
+        {/* Video / Third-Party Player */}
+        {activeVideoUrl ? (
+          isDirectMedia ? (
+            <video
+              ref={videoRef}
+              key={activeVideoUrl}
+              src={activeVideoUrl}
+              autoPlay
+              playsInline
+              onTimeUpdate={() => {
+                if (videoRef.current) {
+                  const cur = videoRef.current.currentTime;
+                  const dur = videoRef.current.duration || 1;
+
+                  setCurrentTime(cur);
+                  setDuration(dur);
+
+                  onProgressUpdate(
+                    media.id,
+                    currentEpisode?.id,
+                    cur,
+                    dur
+                  );
+                }
+              }}
+              onLoadedMetadata={() => {
+                if (videoRef.current) {
+                  setDuration(videoRef.current.duration);
+                  videoRef.current.volume = volume;
+                  videoRef.current.muted = isMuted;
+                  videoRef.current.playbackRate = selectedSpeed;
+
+                  videoRef.current.play().catch(() => {
+                    setIsPlaying(false);
+                  });
+                }
+              }}
+              onPlay={() => setIsPlaying(true)}
+              onPause={() => setIsPlaying(false)}
+              onEnded={() => {
+                setIsPlaying(false);
+                handleNextEpisode();
+              }}
+              onClick={togglePlay}
+              className="w-full h-full object-contain cursor-pointer"
+            />
+          ) : (
+            <iframe
+              key={activeVideoUrl}
+              src={activeVideoUrl}
+              title={`${media.title} player`}
+              className="w-full h-full border-0 bg-black"
+              allow="autoplay; fullscreen; encrypted-media; picture-in-picture"
+              allowFullScreen
+              referrerPolicy="strict-origin-when-cross-origin"
+            />
+          )
+        ) : (
+          <div className="flex flex-col items-center justify-center gap-3 text-white/60">
+            <Play className="w-10 h-10 text-white/30" />
+            <p className="text-sm">Video source is not available.</p>
+          </div>
+        )}
 
       {/* Subtitles Overlay Preview (Simulated Apple Subtitles) */}
       {selectedSubtitle !== 'Off' && (
