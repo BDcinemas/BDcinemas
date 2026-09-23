@@ -33,6 +33,8 @@ export const AdminPage: React.FC<AdminPageProps> = ({
   const [loginError, setLoginError] = useState<string | null>(null);
   const [actionError, setActionError] = useState<string | null>(null);
   const [isSyncingCatalog, setIsSyncingCatalog] = useState(false);
+  const [isPublishing, setIsPublishing] = useState(false);
+  const [publishSuccess, setPublishSuccess] = useState<string | null>(null);
 
   useEffect(() => {
     let cancelled = false;
@@ -474,6 +476,8 @@ export const AdminPage: React.FC<AdminPageProps> = ({
 
     try {
       setFetchError(null);
+      setPublishSuccess(null);
+      setIsPublishing(true);
 
       const response = await googleAppsScriptService.createContent(
         sessionId,
@@ -510,6 +514,10 @@ export const AdminPage: React.FC<AdminPageProps> = ({
 
       await refreshAdminCatalog(sessionId);
 
+      setPublishSuccess(
+        `"${newItem.title}" has been published successfully.`
+      );
+
       resetForm();
       setShowAddForm(false);
     } catch (error: any) {
@@ -519,6 +527,8 @@ export const AdminPage: React.FC<AdminPageProps> = ({
         error?.message ||
         'Failed to save content to Google Sheets.'
       );
+    } finally {
+      setIsPublishing(false);
     }
   };
 
@@ -1016,23 +1026,45 @@ export const AdminPage: React.FC<AdminPageProps> = ({
             </div>
 
             {/* Actions */}
-            <div className="flex items-center justify-end gap-3 pt-4 border-t border-white/10">
-              <button
-                type="button"
-                onClick={() => {
-                  resetForm();
-                  setShowAddForm(false);
-                }}
-                className="px-4 py-2.5 rounded-xl bg-white/10 text-white text-xs hover:bg-white/20 transition cursor-pointer"
-              >
-                Cancel
-              </button>
-              <button
-                type="submit"
-                className="px-6 py-2.5 rounded-xl bg-[#E50914] text-white text-xs font-bold hover:bg-[#ff334b] transition shadow-lg cursor-pointer"
-              >
-                Publish Content
-              </button>
+            <div className="flex items-center justify-between gap-3 pt-4 border-t border-white/10">
+              <div className="min-h-[20px]">
+                {publishSuccess && (
+                  <div className="flex items-center gap-2 text-emerald-400 text-xs font-medium">
+                    <CheckCircle2 className="w-4 h-4" />
+                    <span>{publishSuccess}</span>
+                  </div>
+                )}
+              </div>
+
+              <div className="flex items-center gap-3">
+                <button
+                  type="button"
+                  disabled={isPublishing}
+                  onClick={() => {
+                    resetForm();
+                    setShowAddForm(false);
+                    setPublishSuccess(null);
+                  }}
+                  className="px-4 py-2.5 rounded-xl bg-white/10 text-white text-xs hover:bg-white/20 transition cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
+                >
+                  Cancel
+                </button>
+
+                <button
+                  type="submit"
+                  disabled={isPublishing}
+                  className="px-6 py-2.5 rounded-xl bg-[#E50914] text-white text-xs font-bold hover:bg-[#ff334b] transition shadow-lg cursor-pointer disabled:opacity-70 disabled:cursor-not-allowed flex items-center gap-2"
+                >
+                  {isPublishing ? (
+                    <>
+                      <Loader2 className="w-4 h-4 animate-spin" />
+                      Publishing...
+                    </>
+                  ) : (
+                    'Publish Content'
+                  )}
+                </button>
+              </div>
             </div>
           </form>
         )}
