@@ -376,11 +376,11 @@ export const AdminPage: React.FC<AdminPageProps> = ({
         );
       }
 
-      await refreshAdminCatalog(sessionId);
-
       setPublishStatusSuccess(
         `"${item.title}" ${nextPublishedState ? 'Published Successfully' : 'Unpublished Successfully'}`
       );
+
+      await refreshAdminCatalog(sessionId);
     } catch (error: any) {
       console.error('Failed to update publish status:', error);
       setActionError(

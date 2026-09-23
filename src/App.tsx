@@ -21,20 +21,33 @@ import { NotFoundPage } from './pages/NotFoundPage';
 
 export const App: React.FC = () => {
   const { currentPath, params } = useRouter();
-  const [catalog, setCatalog] = useState<MediaItem[]>(INITIAL_MEDIA_ITEMS);
+  const [catalog, setCatalog] = useState<MediaItem[]>([]);
+  const [isCatalogLoading, setIsCatalogLoading] = useState(true);
 
   useEffect(() => {
     let cancelled = false;
 
     const loadPublishedContent = async () => {
+      setIsCatalogLoading(true);
+
       try {
         const response = await googleAppsScriptService.getPublished();
 
         if (!cancelled && response.success && Array.isArray(response.data)) {
           setCatalog(response.data);
+        } else if (!cancelled) {
+          setCatalog(INITIAL_MEDIA_ITEMS);
         }
       } catch (error) {
         console.error("Failed to load published content from Google Sheets:", error);
+
+        if (!cancelled) {
+          setCatalog(INITIAL_MEDIA_ITEMS);
+        }
+      } finally {
+        if (!cancelled) {
+          setIsCatalogLoading(false);
+        }
       }
     };
 
@@ -338,7 +351,16 @@ export const App: React.FC = () => {
       <Navbar watchlistCount={watchlist.length} />
 
       <main className="flex-1 pb-20 md:pb-0">
-        {renderCurrentPage()}
+        {isCatalogLoading && currentPath !== '/admin' ? (
+          <div className="min-h-[70vh] flex items-center justify-center bg-[#0A0A0C]">
+            <div className="flex flex-col items-center gap-3 text-white/50">
+              <div className="w-8 h-8 rounded-full border-2 border-white/10 border-t-[#E50914] animate-spin" />
+              <span className="text-xs">Loading catalog...</span>
+            </div>
+          </div>
+        ) : (
+          renderCurrentPage()
+        )}
       </main>
 
       <Footer />
